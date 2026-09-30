@@ -26,6 +26,7 @@ import {
   getVerificationDisplayStatus,
   isVerificationEditable,
   isVerificationFailedAtSubmit,
+  verificationListStageReason,
   normalizeVerificationStatus,
   sanitizeVerificationDisplayText,
   verificationFilterLabel,
@@ -393,6 +394,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                 ? resolveZohoPushStatus(record)
                 : null;
             const zohoListBadge = shouldShowZohoListBadge(zohoPushStatus) ? zohoPushStatus : null;
+            const stageReason = verificationListStageReason(record);
+            const stageReasonTone =
+              statusTone === 'rejected' ? 'rejected' : 'failed';
 
             return (
               <article
@@ -541,6 +545,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         className="verification-list-card-metric--vct"
                       />
                     </div>
+                    {stageReason && (
+                      <p
+                        className={`verification-list-card-reason verification-list-card-reason--${stageReasonTone}`}
+                      >
+                        {stageReason}
+                      </p>
+                    )}
                   </div>
                 </button>
 

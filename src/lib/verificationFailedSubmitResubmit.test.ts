@@ -33,10 +33,10 @@ function rec(
 }
 
 describe('failed-at-submit resubmit eligibility', () => {
-  it('allows a failed-at-submit job older than 12h for auto', () => {
+  it('never auto-resubmits failed-at-submit — stay until manual retry', () => {
     const record = rec({ id: 'a' });
     assert.equal(isEligibleFailedSubmitManualResubmit(record), true);
-    assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), true);
+    assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), false);
   });
 
   it('skips too-fresh fails for auto but still allows manual', () => {

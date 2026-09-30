@@ -202,20 +202,46 @@ export function mergePasBankCounts(
 export type PasBankVerifyOptions = {
   /** RV types an existing (often already used) PAS serial. OV must still be unused. */
   allowUsed?: boolean;
+  /** Same draft already marked this seat — not a foreign use. */
+  recordId?: string | null;
 };
 
-export function pasBankOptionsForJob(verificationType: string | undefined | null): PasBankVerifyOptions {
-  return { allowUsed: verificationType === 'RV' };
+export type PasBankRecordDecision = { ok: true } | { ok: false; reason: string };
+
+export function pasBankOptionsForJob(
+  verificationType: string | undefined | null,
+  recordId?: string | null,
+): PasBankVerifyOptions {
+  return { allowUsed: verificationType === 'RV', recordId: recordId || undefined };
 }
 
-export function pasBankStatusError(serial: string, status: string, allowUsed = false): string | null {
+function sameRecordUse(usedRecordId?: string | null, recordId?: string | null): boolean {
+  const used = String(usedRecordId || '').trim();
+  const current = String(recordId || '').trim();
+  return Boolean(used && current && used === current);
+}
+
+function serialsMatchExact(left: string, right: string): boolean {
+  return left.trim().toUpperCase() === right.trim().toUpperCase();
+}
+
+export function pasBankStatusError(
+  serial: string,
+  status: string,
+  allowUsed = false,
+  usedRecordId?: string | null,
+  recordId?: string | null,
+): string | null {
   const key = status.trim().toLowerCase();
   if (!key || key === 'available' || key === 'allotted') return null;
-  if (key === 'used') return allowUsed ? null : `Serial ${serial} is already used.`;
+  if (key === 'used') {
+    if (allowUsed || sameRecordUse(usedRecordId, recordId)) return null;
+    return `Serial ${serial} is already used.`;
+  }
   return `Serial ${serial} is not available.`;
 }
 
-/** Sync PAS bank decision. Unknown serial never proceeds. */
+/** Sync PAS bank decision. Unknown serial never proceeds. Exact serial only. */
 export function interpretPasBankLookup(
   serial: string,
   data: PasBankDoc | null | undefined,
@@ -225,12 +251,52 @@ export function interpretPasBankLookup(
   const trimmed = serial.trim();
   if (!trimmed) return 'Serial number is required.';
   if (!data) return `Serial ${trimmed} is not in the PAS number bank.`;
-  const statusError = pasBankStatusError(trimmed, String(data.status || ''), Boolean(options?.allowUsed));
+  const bankSerial = String(data.serialNumber || '').trim();
+  if (bankSerial && !serialsMatchExact(bankSerial, trimmed)) {
+    return `Serial ${trimmed} is not in the PAS number bank.`;
+  }
+  const statusError = pasBankStatusError(
+    trimmed,
+    String(data.status || ''),
+    Boolean(options?.allowUsed),
+    data.usedRecordId,
+    options?.recordId,
+  );
   if (statusError) return statusError;
   if (!pasBankMatchesProduct(data, product)) {
     return `Serial ${trimmed} is not allotted to this PAS product.`;
   }
   return null;
+}
+
+export function decidePasBankForRecord(
+  serial: string,
+  data: PasBankDoc | null | undefined,
+  product: Product | null | undefined,
+  options?: PasBankVerifyOptions,
+): PasBankRecordDecision {
+  if (!product?.pasPreAllotted) return { ok: true };
+  const error = interpretPasBankLookup(serial, data, product, options);
+  return error ? { ok: false, reason: error } : { ok: true };
+}
+
+export function partitionRecordsByPasBank<T>(
+  records: readonly T[],
+  decide: (record: T, index: number) => PasBankRecordDecision,
+): { eligible: T[]; skipped: Array<{ record: T; reason: string }> } {
+  const eligible: T[] = [];
+  const skipped: Array<{ record: T; reason: string }> = [];
+  records.forEach((record, index) => {
+    const decision = decide(record, index);
+    if (decision.ok) eligible.push(record);
+    else skipped.push({ record, reason: decision.reason });
+  });
+  return { eligible, skipped };
+}
+
+export function isPasSerialAlreadyUsedReason(reason: string): boolean {
+  const text = reason.trim().toLowerCase();
+  return text.includes('already used') || text.includes('used more than once');
 }
 
 /** Yesone PAS meta from/to — YJ only. Never expand a G/X unused range into the block list. */

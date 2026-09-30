@@ -36,7 +36,7 @@ function blockById(blocks: Record<string, string | null>) {
 }
 
 describe('planFailAndDraftBulkSubmit', () => {
-  it('resubmits only fail-at-submit; submits complete drafts; skips incomplete', () => {
+  it('submits complete drafts only; skips incomplete; does not queue fail', () => {
     const rows = [
       rec({ id: 'fail-1' }),
       rec({
@@ -57,7 +57,7 @@ describe('planFailAndDraftBulkSubmit', () => {
         id: 'draft-serial',
         status: 'draft',
         pipelineFailedPhase: undefined,
-        serialNumber: '',
+        serialNumber: 'SN-GAP2',
         applicationNumber: 'APP-NOSN',
       }),
     ];
@@ -69,10 +69,7 @@ describe('planFailAndDraftBulkSubmit', () => {
       }),
     });
 
-    assert.deepEqual(
-      plan.failResubmit.map(row => row.id),
-      ['fail-1'],
-    );
+    assert.deepEqual(plan.failResubmit.map(row => row.id), []);
     assert.deepEqual(
       plan.draftSubmit.map(row => row.id),
       ['draft-ok'],
@@ -87,7 +84,7 @@ describe('planFailAndDraftBulkSubmit', () => {
     assert.equal(failDraftBulkHasWork(plan), true);
   });
 
-  it('does not touch rejected, unsigned, certified, or mid-submit jobs', () => {
+  it('does not touch rejected, fail-at-submit, unsigned, certified, or mid-submit jobs', () => {
     const rows = [
       rec({ id: 'fail-1' }),
       rec({ id: 'rej', status: 'rejected', pipelineFailedPhase: 'submit' }),
@@ -121,17 +118,14 @@ describe('planFailAndDraftBulkSubmit', () => {
       draftBlockReason: () => null,
     });
 
-    assert.deepEqual(
-      plan.failResubmit.map(row => row.id),
-      ['fail-1'],
-    );
+    assert.deepEqual(plan.failResubmit.map(row => row.id), []);
     assert.deepEqual(
       plan.draftSubmit.map(row => row.id),
       ['draft-ok'],
     );
     assert.deepEqual(
       plan.ignored.map(row => row.id).sort(),
-      ['cert', 'mid', 'rej', 'unsigned'],
+      ['cert', 'fail-1', 'mid', 'rej', 'unsigned'],
     );
     assert.equal(isEligibleFailedSubmitManualResubmit(rows[1]), false);
     assert.equal(isEligibleFailedSubmitManualResubmit(rows[2]), false);
@@ -158,7 +152,7 @@ describe('planFailAndDraftBulkSubmit', () => {
 });
 
 describe('confirm copy and who can run combined bulk', () => {
-  it('lists skipped drafts and says rejected/cert are untouched', () => {
+  it('lists skipped drafts and says fail/rejected/cert are untouched', () => {
     const plan = planFailAndDraftBulkSubmit(
       [
         rec({ id: 'fail-1' }),
@@ -173,11 +167,11 @@ describe('confirm copy and who can run combined bulk', () => {
       { draftBlockReason: blockById({ 'draft-serial': 'Serial number is required.' }) },
     );
     const message = formatFailDraftBulkConfirmMessage(plan);
-    assert.match(message, /Re-queue 1 failed-at-submit job/);
+    assert.equal(message.includes('Re-queue'), false);
     assert.match(message, /Skipped drafts/);
     assert.match(message, /APP-NOSN/);
     assert.match(message, /Serial number is required/);
-    assert.match(message, /Does not touch rejected, unsigned, or certified/);
+    assert.match(message, /Does not touch failed-at-submit, rejected, unsigned, or certified/);
     assert.equal(message.includes('Submit 1 eligible draft'), false);
   });
 

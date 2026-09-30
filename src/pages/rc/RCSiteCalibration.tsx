@@ -124,6 +124,7 @@ import {
 } from '../../lib/verificationListGrouping';
 import {
   approveAndSubmitPendingRcRecords,
+  rejectVerificationRecords,
   submitVerificationRecord,
   submitVerificationRecords,
   submitVerifierWorkForRcReview,
@@ -165,8 +166,11 @@ import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSe
 import {
   allotmentUsesPasProduct,
   catalogueHasPasProducts,
+  formatPasBulkSkipNote,
+  isPasSerialAlreadyUsedReason,
   markPasCalibrationRecordsUsed,
   markPasSerialsUsedForRows,
+  partitionPasCalibrationRecords,
   pasBankOptionsForJob,
   productUsesPasSerials,
   verifyPasCalibrationRecords,
@@ -1892,6 +1896,19 @@ export const RCSiteCalibration: React.FC = () => {
 
     const pasBankError = await verifyPasCalibrationRecords([record], products);
     if (pasBankError) {
+      if (isPasSerialAlreadyUsedReason(pasBankError)) {
+        setSubmitting(true);
+        setListError('');
+        try {
+          await rejectVerificationRecords([{ id: record.id, reason: pasBankError }], db);
+          await fetchRecords();
+        } catch (err: unknown) {
+          setListError(formatSaveError(err, pasBankError, record));
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
       setListError(pasBankError);
       return;
     }
@@ -1959,41 +1976,74 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const pasBankError = await verifyPasCalibrationRecords(selectedRecords, products);
-    if (pasBankError) {
-      setListError(pasBankError);
-      return;
-    }
-
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
-      await markPasCalibrationRecordsUsed(
-        selectedRecords.map(record => ({
-          productId: record.productId,
-          serialNumber: record.serialNumber,
-          recordId: record.id,
-          verificationType: record.verificationType,
-        })),
-        products,
-        { uid: actorUid, rcId: rcUid },
-      );
-      if (isVerifier) {
-        await submitVerifierWorkForRcReview(selectedRecords.map(record => record.id));
-        setSelectedDraftIds(new Set());
-        if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
+      const { eligible, skipped } = await partitionPasCalibrationRecords(selectedRecords, products);
+      const rejectRows = skipped.filter(item => isPasSerialAlreadyUsedReason(item.reason));
+      if (rejectRows.length > 0) {
+        await rejectVerificationRecords(
+          rejectRows.map(item => ({ id: item.record.id, reason: item.reason })),
+          db,
+        );
+      }
+
+      const toSubmit: SiteCalibration[] = [];
+      const rejectFromMark: typeof skipped = [];
+      for (const record of eligible) {
+        try {
+          await markPasCalibrationRecordsUsed(
+            [{
+              productId: record.productId,
+              serialNumber: record.serialNumber,
+              recordId: record.id,
+              verificationType: record.verificationType,
+            }],
+            products,
+            { uid: actorUid, rcId: rcUid },
+          );
+          toSubmit.push(record);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '';
+          if (isPasSerialAlreadyUsedReason(message)) {
+            rejectFromMark.push({ record, reason: message });
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (rejectFromMark.length > 0) {
+        await rejectVerificationRecords(
+          rejectFromMark.map(item => ({ id: item.record.id, reason: item.reason })),
+          db,
+        );
+      }
+
+      if (toSubmit.length === 0) {
+        const note = formatPasBulkSkipNote(0, [...rejectRows, ...rejectFromMark]);
+        if (note) setListError(note);
         await fetchRecords();
         return;
       }
+
+      if (isVerifier) {
+        await submitVerifierWorkForRcReview(toSubmit.map(record => record.id));
+        setSelectedDraftIds(new Set());
+        if (editingId && toSubmit.some(r => r.id === editingId)) handleCloseForm();
+        await fetchRecords();
+        const note = formatPasBulkSkipNote(toSubmit.length, [...rejectRows, ...rejectFromMark]);
+        if (note) setListError(note);
+        return;
+      }
       await ensureRvWalletDebitedForRecords({
-        records: selectedRecords,
+        records: toSubmit,
         products,
         feeSettings: appSettings,
         feesForRc: () => resolveRcFeesStructure(rcProfile),
       });
       await submitVerificationRecords(
-        selectedRecords.map(record => ({
+        toSubmit.map(record => ({
           id: record.id,
           verificationType: record.verificationType,
           ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
@@ -2002,9 +2052,11 @@ export const RCSiteCalibration: React.FC = () => {
         submitOptions,
       );
       setSelectedDraftIds(new Set());
-      if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
+      if (editingId && toSubmit.some(r => r.id === editingId)) handleCloseForm();
       await fetchRecords();
-      beginSubmitProgress(selectedRecords.map(record => record.id));
+      beginSubmitProgress(toSubmit.map(record => record.id));
+      const note = formatPasBulkSkipNote(toSubmit.length, [...rejectRows, ...rejectFromMark]);
+      if (note) setListError(note);
     } catch (err: unknown) {
       setListError(
         isZohoInvoiceGateError(err)

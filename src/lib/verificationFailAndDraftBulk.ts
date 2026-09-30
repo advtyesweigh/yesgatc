@@ -1,4 +1,3 @@
-import { isEligibleFailedSubmitManualResubmit } from './verificationFailedSubmitResubmit.ts';
 import type { SiteCalibration } from '../types.ts';
 
 export type FailDraftBulkSkip = {
@@ -39,9 +38,8 @@ function skipLabel(skip: FailDraftBulkSkip): string {
 }
 
 /**
- * Partition jobs for the admin “Submit all Fail + eligible Draft” action.
- * Fail-at-submit uses the same-job resubmit path. Drafts use first-time submit.
- * Rejected / unsigned / certified / in-flight submitted are never queued.
+ * Super Admin bulk submit: eligible **drafts only**.
+ * failed_at_submit / rejected stay put — RC/admin retries per row.
  */
 export function planFailAndDraftBulkSubmit<T extends SiteCalibration>(
   records: T[],
@@ -53,11 +51,6 @@ export function planFailAndDraftBulkSubmit<T extends SiteCalibration>(
   const ignored: FailDraftBulkSkip[] = [];
 
   for (const record of records) {
-    if (isEligibleFailedSubmitManualResubmit(record)) {
-      failResubmit.push(record);
-      continue;
-    }
-
     if (record.status === 'draft') {
       const reason = options.draftBlockReason(record)?.trim() || null;
       if (reason) draftSkip.push(skipFrom(record, reason));
@@ -65,7 +58,17 @@ export function planFailAndDraftBulkSubmit<T extends SiteCalibration>(
       continue;
     }
 
-    ignored.push(skipFrom(record, 'not fail-at-submit or draft'));
+    if (record.status === 'rejected') {
+      ignored.push(skipFrom(record, 'rejected stays until manual retry'));
+      continue;
+    }
+
+    if (record.status === 'submitted' && record.pipelineFailedPhase === 'submit') {
+      ignored.push(skipFrom(record, 'failed-at-submit stays until manual resubmit'));
+      continue;
+    }
+
+    ignored.push(skipFrom(record, 'not an eligible draft'));
   }
 
   return { failResubmit, draftSubmit, draftSkip, ignored };
@@ -76,26 +79,18 @@ export function canActorBulkSubmitFailAndDraft(role?: string | null): boolean {
 }
 
 export function failDraftBulkHasWork(plan: FailDraftBulkPlan): boolean {
-  return plan.failResubmit.length > 0 || plan.draftSubmit.length > 0;
+  return plan.draftSubmit.length > 0;
 }
 
 export function formatFailDraftBulkConfirmMessage(plan: FailDraftBulkPlan): string {
   const lines: string[] = [];
-  const failN = plan.failResubmit.length;
   const draftN = plan.draftSubmit.length;
 
-  if (failN > 0) {
-    lines.push(
-      `Re-queue ${failN} failed-at-submit job${failN === 1 ? '' : 's'} for eMAAP.`,
-    );
-    lines.push('Same certificate jobs. Application numbers are kept.');
-  }
   if (draftN > 0) {
-    if (lines.length > 0) lines.push('');
     lines.push(`Submit ${draftN} eligible draft${draftN === 1 ? '' : 's'} for first-time eMAAP.`);
   }
   if (plan.draftSkip.length > 0) {
-    lines.push('');
+    if (lines.length > 0) lines.push('');
     lines.push('Skipped drafts (incomplete — not submitted):');
     const shown = plan.draftSkip.slice(0, 12);
     for (const skip of shown) {
@@ -105,6 +100,6 @@ export function formatFailDraftBulkConfirmMessage(plan: FailDraftBulkPlan): stri
     if (extra > 0) lines.push(`• … +${extra} more`);
   }
   lines.push('');
-  lines.push('Does not touch rejected, unsigned, or certified jobs.');
+  lines.push('Does not touch failed-at-submit, rejected, unsigned, or certified jobs.');
   return lines.join('\n');
 }

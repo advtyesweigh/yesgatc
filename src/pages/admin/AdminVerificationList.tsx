@@ -87,11 +87,15 @@ import {
   siteCalibrationSubmitBlockReason,
 } from '../../lib/siteCalibrationProfileFields';
 import {
+  formatPasBulkSkipNote,
+  isPasSerialAlreadyUsedReason,
   markPasCalibrationRecordsUsed,
+  partitionPasCalibrationRecords,
   verifyPasCalibrationRecords,
 } from '../../lib/pasSerialBank';
 import {
   approveAndSubmitPendingRcRecords,
+  rejectVerificationRecords,
   submitVerificationRecord,
   submitVerificationRecords,
   type VerificationSubmitOptions,
@@ -755,38 +759,67 @@ export const AdminVerificationList: React.FC = () => {
 
   const submitReadyDraftRecords = useCallback(
     async (selectedRecords: SiteCalibration[]) => {
-      if (selectedRecords.length === 0) return;
+      if (selectedRecords.length === 0) return null;
 
-      const pasBankError = await verifyPasCalibrationRecords(selectedRecords, products);
-      if (pasBankError) {
-        throw new Error(pasBankError);
+      const { eligible, skipped } = await partitionPasCalibrationRecords(selectedRecords, products);
+      const rejectRows = skipped.filter(item => isPasSerialAlreadyUsedReason(item.reason));
+      if (rejectRows.length > 0) {
+        await rejectVerificationRecords(
+          rejectRows.map(item => ({ id: item.record.id, reason: item.reason })),
+          db,
+        );
       }
 
-      await markPasCalibrationRecordsUsed(
-        selectedRecords.map(record => ({
-          productId: record.productId,
-          serialNumber: record.serialNumber,
-          recordId: record.id,
-          rcId: record.rcId,
-          verificationType: record.verificationType,
-        })),
-        products,
-        { uid: user?.uid, rcId: selectedRecords[0]?.rcId },
-      );
-      await ensureRvWalletDebitedForRecords({
-        records: selectedRecords,
-        products,
-        feeSettings: appSettings,
-        feesForRc: () => resolveRcFeesStructure(null),
-      });
-      await submitVerificationRecords(
-        selectedRecords.map(record => ({
-          id: record.id,
-          verificationType: record.verificationType,
-        })),
-        db,
-        submitOptions,
-      );
+      const toSubmit: SiteCalibration[] = [];
+      const rejectFromMark: typeof skipped = [];
+      for (const record of eligible) {
+        try {
+          await markPasCalibrationRecordsUsed(
+            [{
+              productId: record.productId,
+              serialNumber: record.serialNumber,
+              recordId: record.id,
+              rcId: record.rcId,
+              verificationType: record.verificationType,
+            }],
+            products,
+            { uid: user?.uid, rcId: record.rcId },
+          );
+          toSubmit.push(record);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '';
+          if (isPasSerialAlreadyUsedReason(message)) {
+            rejectFromMark.push({ record, reason: message });
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (rejectFromMark.length > 0) {
+        await rejectVerificationRecords(
+          rejectFromMark.map(item => ({ id: item.record.id, reason: item.reason })),
+          db,
+        );
+      }
+
+      if (toSubmit.length > 0) {
+        await ensureRvWalletDebitedForRecords({
+          records: toSubmit,
+          products,
+          feeSettings: appSettings,
+          feesForRc: () => resolveRcFeesStructure(null),
+        });
+        await submitVerificationRecords(
+          toSubmit.map(record => ({
+            id: record.id,
+            verificationType: record.verificationType,
+          })),
+          db,
+          submitOptions,
+        );
+      }
+
+      return formatPasBulkSkipNote(toSubmit.length, [...rejectRows, ...rejectFromMark]);
     },
     [products, user?.uid, appSettings, submitOptions],
   );
@@ -802,6 +835,19 @@ export const AdminVerificationList: React.FC = () => {
 
     const pasBankError = await verifyPasCalibrationRecords([record], products);
     if (pasBankError) {
+      if (isPasSerialAlreadyUsedReason(pasBankError)) {
+        setSubmitting(true);
+        setListError('');
+        try {
+          await rejectVerificationRecords([{ id: record.id, reason: pasBankError }], db);
+          await fetchRecords();
+        } catch (err: unknown) {
+          setListError(err instanceof Error ? err.message : pasBankError);
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
       setListError(pasBankError);
       return;
     }
@@ -841,12 +887,20 @@ export const AdminVerificationList: React.FC = () => {
       });
       await fetchRecords();
     } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '';
+      if (isPasSerialAlreadyUsedReason(message)) {
+        try {
+          await rejectVerificationRecords([{ id: record.id, reason: message }], db);
+          await fetchRecords();
+        } catch {
+          setListError(message);
+        }
+        return;
+      }
       setListError(
         isZohoInvoiceGateError(err)
           ? formatZohoInvoiceGateError(err)
-          : err instanceof Error
-            ? err.message
-            : 'Failed to submit verification.',
+          : message || 'Failed to submit verification.',
       );
     } finally {
       setSubmitting(false);
@@ -868,9 +922,10 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await submitReadyDraftRecords(selectedRecords);
+      const note = await submitReadyDraftRecords(selectedRecords);
       setSelectedDraftIds(new Set());
       await fetchRecords();
+      if (note) setListError(note);
     } catch (err: unknown) {
       setListError(
         isZohoInvoiceGateError(err)
@@ -1019,13 +1074,13 @@ export const AdminVerificationList: React.FC = () => {
       setListError(
         plan.draftSkip.length > 0
           ? formatFailDraftBulkConfirmMessage(plan)
-          : 'No failed-at-submit jobs or eligible drafts in this period.',
+          : 'No eligible drafts in this period.',
       );
       return;
     }
 
     const ok = await confirm({
-      title: 'Submit Fail + eligible Draft?',
+      title: 'Submit eligible drafts?',
       message: formatFailDraftBulkConfirmMessage(plan),
       messageFormat: 'preline',
       confirmLabel: 'Submit all',
@@ -1035,26 +1090,18 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      if (plan.failResubmit.length > 0) {
-        await resubmitFailedSubmitVerifications(
-          plan.failResubmit.map(record => record.id),
-          'bulk',
-          db,
-        );
-      }
-      if (plan.draftSubmit.length > 0) {
-        await submitReadyDraftRecords(plan.draftSubmit);
-      }
+      const note = await submitReadyDraftRecords(plan.draftSubmit);
       setSelectedDraftIds(new Set());
       setSelectedFailedIds(new Set());
       await fetchRecords();
+      if (note) setListError(note);
     } catch (err: unknown) {
       setListError(
         isZohoInvoiceGateError(err)
           ? formatZohoInvoiceGateError(err)
           : err instanceof Error
             ? err.message
-            : 'Failed to submit Fail + Draft queue.',
+            : 'Failed to submit eligible drafts.',
       );
       await fetchRecords();
     } finally {
@@ -1152,8 +1199,6 @@ export const AdminVerificationList: React.FC = () => {
             && (failDraftBulkHasWork(failDraftPlan) || failDraftPlan.draftSkip.length > 0) && (
             <div className="verification-bulk-bar">
               <span className="verification-bulk-bar-count">
-                {failDraftPlan.failResubmit.length} fail
-                {' · '}
                 {failDraftPlan.draftSubmit.length} draft ready
                 {failDraftPlan.draftSkip.length > 0
                   ? ` · ${failDraftPlan.draftSkip.length} draft skipped`
@@ -1169,7 +1214,7 @@ export const AdminVerificationList: React.FC = () => {
                   <span className="spinner-inline" />
                 ) : (
                   <>
-                    <Send size={16} /> Submit all Fail + eligible Draft
+                    <Send size={16} /> Submit all eligible Draft
                   </>
                 )}
               </button>

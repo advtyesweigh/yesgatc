@@ -3,11 +3,14 @@ import { describe, it } from 'node:test';
 import type { Product } from '../types';
 import {
   allotmentUsesPasProduct,
+  decidePasBankForRecord,
   interpretPasBankLookup,
   isGasStickerSerial,
+  isPasSerialAlreadyUsedReason,
   isPasStickerSerial,
   mergePasBankCounts,
   mergePasBlockedSerials,
+  partitionRecordsByPasBank,
   pasBankListedForProduct,
   pasBankMatchesProduct,
   pasBankOptionsForJob,
@@ -16,6 +19,7 @@ import {
   type PasBankDoc,
   type ProductSerialRow,
 } from './pasSerialBankMatch.ts';
+import { buildVerificationRejectPatch } from './verificationRequest.ts';
 
 function product(partial: Pick<Product, 'id' | 'yesoneSku' | 'modelid'> & Partial<Product>): Product {
   return {
@@ -166,6 +170,105 @@ describe('interpretPasBankLookup', () => {
       interpretPasBankLookup('YJ00001', { ...bank, status: 'used' }, scale10, pasBankOptionsForJob('RV')),
       null,
     );
+  });
+
+  it('self-serial on the same draft is not already used', () => {
+    assert.equal(
+      interpretPasBankLookup(
+        'YJ01330',
+        { ...bank, serialNumber: 'YJ01330', status: 'used', usedRecordId: 'draft-yj' },
+        scale10,
+        pasBankOptionsForJob('OV', 'draft-yj'),
+      ),
+      null,
+    );
+  });
+
+  it('does not treat a prefix serial as the used seat', () => {
+    assert.equal(
+      interpretPasBankLookup(
+        'YJ01330',
+        { ...bank, serialNumber: 'YJ0133', status: 'used', usedRecordId: 'other' },
+        scale10,
+        pasBankOptionsForJob('OV', 'draft-yj'),
+      ),
+      'Serial YJ01330 is not in the PAS number bank.',
+    );
+  });
+});
+
+describe('partitionRecordsByPasBank', () => {
+  const used: PasBankDoc = {
+    serialNumber: 'YJ01330',
+    status: 'used',
+    yesoneSku: 'KS10BAY',
+    productId: 'scale10',
+    usedRecordId: 'certified-job',
+  };
+  const unused: PasBankDoc = {
+    serialNumber: 'YJ01331',
+    status: 'available',
+    yesoneSku: 'KS10BAY',
+    productId: 'scale10',
+  };
+
+  it('self-serial is eligible; one foreign used serial rejects only that draft', () => {
+    const records = [
+      { id: 'self', serialNumber: 'YJ01330', productId: 'scale10' },
+      { id: 'bad', serialNumber: 'YJ01330', productId: 'scale10' },
+      { id: 'ok-a', serialNumber: 'YJ01331', productId: 'scale10' },
+      { id: 'ok-b', serialNumber: 'YJ01332', productId: 'scale10' },
+    ];
+    const banks: Record<string, PasBankDoc> = {
+      self: { ...used, usedRecordId: 'self' },
+      bad: used,
+      'ok-a': unused,
+      'ok-b': { ...unused, serialNumber: 'YJ01332' },
+    };
+    const { eligible, skipped } = partitionRecordsByPasBank(records, record =>
+      decidePasBankForRecord(
+        record.serialNumber,
+        banks[record.id],
+        scale10,
+        pasBankOptionsForJob('OV', record.id),
+      ),
+    );
+    assert.deepEqual(eligible.map(row => row.id), ['self', 'ok-a', 'ok-b']);
+    assert.deepEqual(skipped.map(row => row.record.id), ['bad']);
+    assert.equal(isPasSerialAlreadyUsedReason(skipped[0].reason), true);
+    assert.equal(eligible.length, 3);
+  });
+
+  it('one used serial in a batch does not abort the rest', () => {
+    const records = [
+      { id: 'used', serialNumber: 'YJ01330' },
+      { id: 'keep-1', serialNumber: 'YJ01331' },
+      { id: 'keep-2', serialNumber: 'YJ01332' },
+    ];
+    const { eligible, skipped } = partitionRecordsByPasBank(records, record => {
+      if (record.serialNumber === 'YJ01330') {
+        return decidePasBankForRecord(record.serialNumber, used, scale10, { recordId: record.id });
+      }
+      return decidePasBankForRecord(
+        record.serialNumber,
+        { ...unused, serialNumber: record.serialNumber },
+        scale10,
+        { recordId: record.id },
+      );
+    });
+    assert.deepEqual(skipped.map(row => row.record.id), ['used']);
+    assert.deepEqual(eligible.map(row => row.id), ['keep-1', 'keep-2']);
+  });
+});
+
+describe('buildVerificationRejectPatch', () => {
+  it('writes rejected status and the already-used reason', () => {
+    const patch = buildVerificationRejectPatch('Serial YJ01330 is already used.', '2026-09-30T12:00:00.000Z');
+    assert.equal(patch.status, 'rejected');
+    assert.equal(patch.rejectedAt, '2026-09-30T12:00:00.000Z');
+    assert.equal(patch.pipelineFailedPhase, 'submit');
+    assert.equal(patch.pipelineFailureMessage, 'Serial YJ01330 is already used.');
+    assert.equal(patch.pipelineFailedAt, '2026-09-30T12:00:00.000Z');
   });
 });
 

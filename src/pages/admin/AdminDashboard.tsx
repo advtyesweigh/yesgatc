@@ -442,7 +442,7 @@ export const AdminDashboard: React.FC = () => {
             Verification Stages
           </h2>
           <span className="wl-section__links">
-            {(tally.failed_submit > 0 || tally.draft > 0) && (
+            {tally.draft > 0 && (
               <Link
                 to={verificationListPath(VERIFICATION_PATH, {
                   duration: listDuration,
@@ -450,7 +450,7 @@ export const AdminDashboard: React.FC = () => {
                 })}
                 className="wl-section__link"
               >
-                Submit Fail + Draft
+                Submit eligible Draft
               </Link>
             )}
             <Link to={verificationHref()} className="wl-section__link">

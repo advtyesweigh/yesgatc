@@ -26672,6 +26672,32 @@ select.input-field--table {
   color: #f87171;
 }
 
+.verification-list-card--rejected .verification-list-card-status-ring {
+  border-color: rgba(251, 146, 60, 0.6);
+  color: #fb923c;
+}
+
+.verification-list-card--rejected .verification-list-card-status-label {
+  color: #fb923c;
+}
+
+.verification-list-card-reason {
+  margin: 0.35rem 0 0;
+  max-width: 100%;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.verification-list-card-reason--failed {
+  color: #fca5a5;
+}
+
+.verification-list-card-reason--rejected {
+  color: #fdba74;
+}
+
 .verification-list-card-body {
   display: block;
   min-width: 0;

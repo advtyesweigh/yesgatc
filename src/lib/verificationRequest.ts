@@ -356,20 +356,38 @@ export function verificationDisplayStatusTitle(record: SiteCalibration): string 
     return 'Certified in Firebase but certificate number not synced — use Pipeline recovery to restore submitted so the eMAAP worker reprocesses it.';
   }
   const display = getVerificationDisplayStatus(record);
-  if (display === 'failed_submit' || display === 'failed_certification') {
-    return record.pipelineFailureMessage?.trim() || verificationDisplayStatusLabel(record);
+  if (display === 'failed_submit' || display === 'failed_certification' || display === 'rejected') {
+    return (
+      record.pipelineFailureMessage?.trim()
+      || record.certificationLastError?.trim()
+      || verificationDisplayStatusLabel(record)
+    );
   }
   if (
     display === 'draft' ||
     display === 'pending_rc' ||
     display === 'submitted' ||
     display === 'approved' ||
-    display === 'certified' ||
-    display === 'rejected'
+    display === 'certified'
   ) {
     return verificationStatusDescription(display);
   }
   return verificationDisplayStatusLabel(record);
+}
+
+/** Compact fail/reject copy for list cards (visible, not hover-only). */
+export function verificationListStageReason(record: SiteCalibration): string | null {
+  const display = getVerificationDisplayStatus(record);
+  if (display !== 'rejected' && display !== 'failed_submit' && display !== 'failed_certification') {
+    return null;
+  }
+  const msg =
+    record.pipelineFailureMessage?.trim()
+    || record.certificationLastError?.trim()
+    || '';
+  if (msg) return msg;
+  if (display === 'rejected') return 'Rejected — RC admin must check before a manual retry.';
+  return 'Failed at submit — RC admin must check before a manual retry.';
 }
 
 /** Mutually exclusive stage bucket for one record (matches tally + list filter). */
@@ -714,6 +732,31 @@ export function buildVerificationSubmitPatch(now = new Date().toISOString()): {
     status: 'submitted',
     submittedAt: now,
     updatedAt: now,
+    ...verificationClientVersionFields(),
+  };
+}
+
+/** Draft whose serial is already used on another job — close as rejected, do not keep draft. */
+export function buildVerificationRejectPatch(
+  reason: string,
+  now = new Date().toISOString(),
+): {
+  status: VerificationRequestStatus;
+  rejectedAt: string;
+  updatedAt: string;
+  pipelineFailedPhase: 'submit';
+  pipelineFailureMessage: string;
+  pipelineFailedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
+} {
+  return {
+    status: 'rejected',
+    rejectedAt: now,
+    updatedAt: now,
+    pipelineFailedPhase: 'submit',
+    pipelineFailureMessage: reason.trim() || 'Serial is already used.',
+    pipelineFailedAt: now,
     ...verificationClientVersionFields(),
   };
 }

@@ -2,6 +2,7 @@ import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   buildRcApproveVerifierPatch,
+  buildVerificationRejectPatch,
   buildVerificationSubmitPatch,
   buildVerifierRcReviewPatch,
 } from './verificationRequest';
@@ -115,6 +116,18 @@ export async function submitVerificationRecord(
   options?: VerificationSubmitOptions,
 ): Promise<void> {
   return submitVerificationRecords([target], firestore, options);
+}
+
+export async function rejectVerificationRecords(
+  targets: Array<{ id: string; reason: string }>,
+  firestore: Firestore = db,
+): Promise<void> {
+  if (targets.length === 0) return;
+  await Promise.all(
+    targets.map(target =>
+      updateDoc(doc(firestore, 'siteCalibrations', target.id), buildVerificationRejectPatch(target.reason)),
+    ),
+  );
 }
 
 export async function submitVerifierWorkForRcReview(

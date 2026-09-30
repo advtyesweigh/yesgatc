@@ -1,13 +1,8 @@
 import type { Role, SiteCalibration } from '../types';
 
 /**
- * Auto-resubmit cap for failed-at-submit jobs:
- * - Wait 12 hours after `pipelineFailedAt` (the last worker fail).
- * - Re-queue the **same** document (no clone, no new application/certificate number).
- * - Repeat at most FAILED_SUBMIT_AUTO_RESUBMIT_MAX (3) times.
- * - Stops earlier on success, rejected, move-to-draft, void, or superseded.
- * - Manual / bulk resubmit is not capped and does not increment `autoResubmitCount`.
- * Distinct from `moveStaleFailedVerificationsToDraft` (rejected → draft only).
+ * Failed-at-submit stays failed until RC/admin **manual** per-row resubmit.
+ * Scheduled auto-resubmit is off. Constants kept for old docs/tests.
  */
 export const FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS = 12 * 60 * 60 * 1000;
 export const FAILED_SUBMIT_AUTO_RESUBMIT_MAX = 3;
@@ -28,12 +23,6 @@ export type FailedSubmitResubmitFields = Pick<
   | 'createdByUid'
   | 'vctId'
 >;
-
-function parseIsoMs(value: string | undefined): number | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
-}
 
 function isFailedAtSubmitJob(record: FailedSubmitResubmitFields): boolean {
   return record.status === 'submitted' && record.pipelineFailedPhase === 'submit';
@@ -62,15 +51,10 @@ export function isEligibleFailedSubmitManualResubmit(
 }
 
 export function isEligibleFailedSubmitAutoResubmit(
-  record: FailedSubmitResubmitFields,
-  nowMs: number,
+  _record: FailedSubmitResubmitFields,
+  _nowMs: number,
 ): boolean {
-  if (!isEligibleFailedSubmitManualResubmit(record)) return false;
-  const count = Number(record.autoResubmitCount) || 0;
-  if (count >= FAILED_SUBMIT_AUTO_RESUBMIT_MAX) return false;
-  const failedAt = parseIsoMs(record.pipelineFailedAt);
-  if (failedAt == null) return false;
-  return nowMs - failedAt >= FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS;
+  return false;
 }
 
 export function filterFailedSubmitResubmitTargets<T extends FailedSubmitResubmitFields>(

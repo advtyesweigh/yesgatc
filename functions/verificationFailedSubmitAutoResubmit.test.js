@@ -20,8 +20,8 @@ function failDoc(overrides = {}) {
   };
 }
 
-test('auto eligibility: 12h fail is eligible', () => {
-  assert.equal(isEligibleFailedSubmitAutoResubmit(failDoc(), NOW), true);
+test('auto eligibility: failed-at-submit never auto-resubmits', () => {
+  assert.equal(isEligibleFailedSubmitAutoResubmit(failDoc(), NOW), false);
 });
 
 test('auto eligibility: skips too-fresh fails', () => {
@@ -107,7 +107,7 @@ function createFakeDb({ settings = {}, docs = [] } = {}) {
   };
 }
 
-test('handler resubmits only stale failed-at-submit, not rejected/fresh', async () => {
+test('handler never auto-resubmits even when setting is on', async () => {
   const originalNow = Date.now;
   Date.now = () => NOW;
   try {
@@ -127,13 +127,9 @@ test('handler resubmits only stale failed-at-submit, not rejected/fresh', async 
       ],
     });
     const result = await autoResubmitFailedSubmitVerificationsHandler(db);
-    assert.equal(result.enabled, true);
-    assert.equal(result.resubmitted, 1);
-    assert.equal(db.updates.length, 1);
-    assert.equal(db.updates[0].id, 'old-fail');
-    assert.equal(db.updates[0].patch.status, 'submitted');
-    assert.equal(db.updates[0].patch.failedSubmitResubmitSource, 'auto');
-    assert.ok(db.updates[0].patch.autoResubmitCount);
+    assert.equal(result.enabled, false);
+    assert.equal(result.resubmitted, 0);
+    assert.equal(db.updates.length, 0);
     assert.equal(typeof FieldValue.increment, 'function');
   } finally {
     Date.now = originalNow;

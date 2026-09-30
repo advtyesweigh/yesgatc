@@ -8,10 +8,8 @@ const STALE_AGE_MS = 12 * 60 * 60 * 1000;
 const QUERY_LIMIT = 150;
 const BATCH_LIMIT = 50;
 
-async function isStaleVerificationToDraftEnabled(db) {
-  const snap = await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).get();
-  if (!snap.exists) return true;
-  return snap.data().staleVerificationToDraftEnabled !== false;
+async function isStaleVerificationToDraftEnabled(_db) {
+  return false;
 }
 
 function parseIsoMs(value) {
@@ -33,17 +31,8 @@ function isRejected(data) {
   return data?.status === 'rejected';
 }
 
-function isEligibleStaleCandidate(data, nowMs) {
-  if (!data) return false;
-  if (typeof data.supersededByResubmissionId === 'string' && data.supersededByResubmissionId.trim()) {
-    return false;
-  }
-  // Failed-at-submit is owned by auto-resubmit (verificationFailedSubmitAutoResubmit), not draft reopen.
-  if (isFailedAtSubmit(data)) return false;
-  if (!isRejected(data)) return false;
-  const failedAt = failureTimestampMs(data);
-  if (failedAt == null) return false;
-  return nowMs - failedAt >= STALE_AGE_MS;
+function isEligibleStaleCandidate(_data, _nowMs) {
+  return false;
 }
 
 function draftReopenPatch(nowIso) {
@@ -84,10 +73,7 @@ async function collectStaleCandidates(db, nowMs, limit) {
   return candidates.slice(0, limit);
 }
 
-/**
- * Moves rejected verifications older than 12h back to draft so RC/VCT can fix
- * and submit again. Failed-at-submit is re-queued by auto-resubmit, not this job.
- */
+/** Rejected and failed-at-submit stay in place. No auto reopen as draft. */
 async function moveStaleFailedVerificationsToDraftHandler(db) {
   if (!(await isStaleVerificationToDraftEnabled(db))) {
     console.log('staleVerificationToDraft: disabled via appSettings/global');

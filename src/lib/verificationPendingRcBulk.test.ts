@@ -35,12 +35,15 @@ describe('parseVerificationListStatusParam', () => {
     assert.equal(parseVerificationListStatusParam('pending_rc'), 'pending_rc');
     assert.equal(parseVerificationListStatusParam('draft'), 'draft');
     assert.equal(parseVerificationListStatusParam('failed_submit'), 'failed_submit');
+    assert.equal(parseVerificationListStatusParam('rejected'), 'rejected');
     assert.equal(parseVerificationListStatusParam('certified'), 'certified');
   });
 
   it('maps legacy aliases and rejects unknown', () => {
     assert.equal(parseVerificationListStatusParam('approved'), 'submitted');
     assert.equal(parseVerificationListStatusParam('failed_certification'), 'failed_submit');
+    assert.equal(parseVerificationListStatusParam('failed_at_submit'), 'failed_submit');
+    assert.equal(parseVerificationListStatusParam('failed_at_submission'), 'failed_submit');
     assert.equal(parseVerificationListStatusParam('not_a_status'), null);
     assert.equal(parseVerificationListStatusParam(null), null);
   });
@@ -98,8 +101,9 @@ describe('pending RC list filter', () => {
     const filtered = all.filter(record => record.status === 'pending_rc');
     assert.equal(filtered.length, 5);
     assert.equal(verificationListKeepsUncollapsedRows('pending_rc'), true);
+    assert.equal(verificationListKeepsUncollapsedRows('rejected'), true);
+    assert.equal(verificationListKeepsUncollapsedRows('failed_submit'), true);
     assert.equal(verificationListKeepsUncollapsedRows('certified'), false);
-    assert.equal(verificationListKeepsUncollapsedRows('failed_submit'), false);
     assert.equal(verificationListKeepsUncollapsedRows('draft'), false);
   });
 });

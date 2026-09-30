@@ -4,21 +4,16 @@ const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 
 /**
- * Auto-resubmit cap for failed-at-submit:
- * every 12h after pipelineFailedAt, at most AUTO_RESUBMIT_MAX (3) times,
- * same document (no clone). Stops on success / rejected / draft / void / superseded / cap.
- * Manual resubmit is a separate client path and is not capped here.
- * Distinct from moveStaleFailedVerificationsToDraft (rejected → draft only).
+ * Auto-resubmit of failed-at-submit is disabled.
+ * Jobs stay failed until RC/admin manual per-row resubmit.
  */
 const AUTO_RESUBMIT_AFTER_MS = 12 * 60 * 60 * 1000;
 const AUTO_RESUBMIT_MAX = 3;
 const QUERY_LIMIT = 150;
 const BATCH_LIMIT = 50;
 
-async function isFailedSubmitAutoResubmitEnabled(db) {
-  const snap = await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).get();
-  if (!snap.exists) return true;
-  return snap.data().failedSubmitAutoResubmitEnabled !== false;
+async function isFailedSubmitAutoResubmitEnabled(_db) {
+  return false;
 }
 
 function parseIsoMs(value) {
@@ -47,23 +42,8 @@ function autoResubmitCount(data) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function isEligibleFailedSubmitAutoResubmit(data, nowMs) {
-  if (!data) return false;
-  if (isRejected(data) || isUnsignedIssued(data)) return false;
-  if (data.status === 'certified' || data.status === 'approved' || data.status === 'draft') {
-    return false;
-  }
-  if (typeof data.supersededByResubmissionId === 'string' && data.supersededByResubmissionId.trim()) {
-    return false;
-  }
-  if (typeof data.certificateVoidedAt === 'string' && data.certificateVoidedAt.trim()) {
-    return false;
-  }
-  if (!isFailedAtSubmit(data)) return false;
-  if (autoResubmitCount(data) >= AUTO_RESUBMIT_MAX) return false;
-  const failedAt = parseIsoMs(data.pipelineFailedAt);
-  if (failedAt == null) return false;
-  return nowMs - failedAt >= AUTO_RESUBMIT_AFTER_MS;
+function isEligibleFailedSubmitAutoResubmit(_data, _nowMs) {
+  return false;
 }
 
 function autoResubmitPatch(nowIso) {

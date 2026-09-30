@@ -8,7 +8,7 @@ const {
 const HOUR = 60 * 60 * 1000;
 const NOW = Date.parse('2026-09-08T12:00:00.000Z');
 
-test('stale-to-draft still takes old rejected jobs', () => {
+test('stale-to-draft never takes rejected jobs', () => {
   assert.equal(
     isEligibleStaleCandidate(
       {
@@ -17,7 +17,7 @@ test('stale-to-draft still takes old rejected jobs', () => {
       },
       NOW,
     ),
-    true,
+    false,
   );
   assert.ok(STALE_AGE_MS === 12 * HOUR);
 });

@@ -171,56 +171,18 @@ export function isVerificationListDuplicate(
   return Boolean(key && !primaryIds.has(record.id));
 }
 
-/** True when this verification (or a sibling in the same RC+serial) already has an issued cert. */
-function hasIssuedCertificate(record: SiteCalibration): boolean {
-  const cert = record.certificateNumber?.trim();
-  if (!cert) return false;
-  const status = normalizeVerificationStatus(record);
-  return (
-    status === 'certified' ||
-    Boolean(record.certificatePdfUrl?.trim()) ||
-    canShowVerificationCertifiedActions(record)
-  );
-}
-
-function serialGroupHasIssuedCertificate(
-  record: SiteCalibration,
-  allRecords: SiteCalibration[],
-  groups: Map<string, SiteCalibration[]>,
-): boolean {
-  const key = serialGroupKey(record);
-  if (!key) return hasIssuedCertificate(record);
-  const group = groups.get(key) ?? buildSerialGroupMap(allRecords).get(key);
-  if (!group?.length) return hasIssuedCertificate(record);
-  return group.some(hasIssuedCertificate);
-}
-
 export function matchesVerificationListStatusFilter(
   record: SiteCalibration,
   filter: VerificationStatusFilter,
-  allRecords: SiteCalibration[],
+  _allRecords: SiteCalibration[],
   primaryIds: Set<string>,
-  groups: Map<string, SiteCalibration[]> = new Map(),
+  _groups: Map<string, SiteCalibration[]> = new Map(),
 ): boolean {
   if (filter === 'duplicates') {
     return isVerificationListDuplicate(record, primaryIds);
   }
   if (filter === 'all') return true;
-
-  if (!matchesVerificationStatusFilter(record, filter)) {
-    return false;
-  }
-
-  // Rejected but same serial later certified with a certificate — not a live rejection.
-  if (
-    filter === 'rejected' &&
-    isVerificationRejected(record) &&
-    serialGroupHasIssuedCertificate(record, allRecords, groups)
-  ) {
-    return false;
-  }
-
-  return true;
+  return matchesVerificationStatusFilter(record, filter);
 }
 
 export function countVerificationDuplicates(

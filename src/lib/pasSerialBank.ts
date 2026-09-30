@@ -7,7 +7,10 @@ import {
   finitePasCount,
   interpretPasBankLookup,
   isGasStickerSerial,
+  isPasSerialAlreadyUsedReason,
   isPasStickerSerial,
+  decidePasBankForRecord,
+  partitionRecordsByPasBank,
   mergePasBankCounts,
   mergePasBankUsage,
   mergePasBlockedSerials,
@@ -21,6 +24,7 @@ import {
   usageFromSerialRows,
   type PasAllotmentIdentity,
   type PasBankDoc,
+  type PasBankRecordDecision,
   type PasBankUsage,
   type PasBankVerifyOptions,
   type ProductSerialBankSummary,
@@ -33,10 +37,13 @@ export const PAS_SERIAL_BANK_META_COLLECTION = 'pasSerialBankMeta';
 export {
   allotmentUsesPasProduct,
   assignmentMatchesPasProduct,
+  decidePasBankForRecord,
   isGasStickerSerial,
+  isPasSerialAlreadyUsedReason,
   isPasStickerSerial,
   interpretPasBankLookup,
   mergePasBankCounts,
+  partitionRecordsByPasBank,
   mergePasBankUsage,
   mergePasBlockedSerials,
   pasBankListedForProduct,
@@ -49,6 +56,7 @@ export {
 export type {
   PasAllotmentIdentity,
   PasBankDoc,
+  PasBankRecordDecision,
   PasBankUsage,
   PasBankVerifyOptions,
   ProductSerialBankSummary,
@@ -60,6 +68,7 @@ export type PasCheckRow = {
   productId?: string;
   serialNumber?: string;
   serialSource?: string;
+  recordId?: string;
 };
 
 export function quotaSerialRows(
@@ -163,34 +172,92 @@ export async function verifyPasDevicesInBank(
     const key = serial.toUpperCase();
     if (seen.has(key)) return `Serial ${serial} is used more than once.`;
     seen.add(key);
-    const error = await verifyPasSerialInBank(serial, product, options);
+    const error = await verifyPasSerialInBank(serial, product, {
+      ...options,
+      recordId: options?.recordId ?? row.recordId,
+    });
     if (error) return error;
   }
   return null;
 }
 
 export async function verifyPasCalibrationRecords(
-  records: Array<Pick<SiteCalibration, 'productId' | 'serialNumber' | 'verificationType'>>,
+  records: Array<Pick<SiteCalibration, 'id' | 'productId' | 'serialNumber' | 'verificationType'>>,
   products: readonly Product[] | undefined,
 ): Promise<string | null> {
   for (const record of records) {
     const error = await verifyPasDevicesInBank(
       calibrationRowsForPasCheck([record]),
       products,
-      pasBankOptionsForJob(record.verificationType),
+      pasBankOptionsForJob(record.verificationType, record.id),
     );
     if (error) return error;
   }
   return null;
 }
 
+export type PasCalibrationSkip<T> = { record: T; reason: string };
+
+/** Per-record PAS check. Used serial skips that draft only — never aborts the batch. */
+export async function partitionPasCalibrationRecords<
+  T extends Pick<SiteCalibration, 'id' | 'productId' | 'serialNumber' | 'verificationType'>,
+>(
+  records: T[],
+  products: readonly Product[] | undefined,
+): Promise<{ eligible: T[]; skipped: PasCalibrationSkip<T>[] }> {
+  const decisions: PasBankRecordDecision[] = [];
+  const seen = new Map<string, string>();
+  for (const record of records) {
+    const product = products?.find(item => item.id === record.productId) ?? null;
+    if (!productUsesPasSerials(product) || !product) {
+      decisions.push({ ok: true });
+      continue;
+    }
+    const serial = (record.serialNumber || '').trim();
+    if (!serial) {
+      decisions.push({ ok: true });
+      continue;
+    }
+    const key = serial.toUpperCase();
+    const priorId = seen.get(key);
+    if (priorId && priorId !== record.id) {
+      decisions.push({ ok: false, reason: `Serial ${serial} is used more than once.` });
+      continue;
+    }
+    seen.set(key, record.id);
+    const error = await verifyPasSerialInBank(
+      serial,
+      product,
+      pasBankOptionsForJob(record.verificationType, record.id),
+    );
+    decisions.push(error ? { ok: false, reason: error } : { ok: true });
+  }
+  return partitionRecordsByPasBank(records, (_, index) => decisions[index]);
+}
+
+export function formatPasBulkSkipNote<T extends Pick<SiteCalibration, 'serialNumber'>>(
+  eligibleCount: number,
+  skipped: PasCalibrationSkip<T>[],
+): string | null {
+  if (skipped.length === 0) return null;
+  const rejected = skipped.filter(item => isPasSerialAlreadyUsedReason(item.reason));
+  const reasons = skipped.map(item => item.reason).join(' ');
+  if (rejected.length > 0 && rejected.length === skipped.length) {
+    return eligibleCount > 0
+      ? `Submitted ${eligibleCount}. Rejected ${rejected.length}: ${reasons}`
+      : `Rejected ${rejected.length}: ${reasons}`;
+  }
+  return eligibleCount > 0 ? `Submitted ${eligibleCount}. Skipped ${skipped.length}: ${reasons}` : reasons;
+}
+
 export function calibrationRowsForPasCheck(
-  records: Array<Pick<SiteCalibration, 'productId' | 'serialNumber'>>,
+  records: Array<Pick<SiteCalibration, 'id' | 'productId' | 'serialNumber'>>,
 ): PasCheckRow[] {
   return records.map(record => ({
     included: true,
     productId: record.productId,
     serialNumber: record.serialNumber,
+    recordId: record.id,
   }));
 }
 
