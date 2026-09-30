@@ -1180,17 +1180,17 @@ public sealed class AutomationService : IAsyncDisposable
                 cancellationToken);
         }
 
-        var slots = new (string Url, string Name, string ContentType, string Kind, string Label, string OutFile)[]
+        var slots = new (string Url, string Path, string Name, string ContentType, string Kind, string Label, string OutFile)[]
         {
-            (instrument.StampingImageUrl, instrument.StampingImageName, instrument.StampingImageContentType,
+            (instrument.StampingImageUrl, instrument.StampingImagePath, instrument.StampingImageName, instrument.StampingImageContentType,
                 "stamping", "Serial number plate photo", "emaap-photo-1-stamping.jpg"),
-            (instrument.ScaleImageUrl, instrument.ScaleImageName, instrument.ScaleImageContentType,
+            (instrument.ScaleImageUrl, instrument.ScaleImagePath, instrument.ScaleImageName, instrument.ScaleImageContentType,
                 "scale", "Instrument photo", "emaap-photo-2-scale.jpg"),
-            (instrument.InstrumentRearImageUrl, instrument.InstrumentRearImageName, instrument.InstrumentRearImageContentType,
+            (instrument.InstrumentRearImageUrl, instrument.InstrumentRearImagePath, instrument.InstrumentRearImageName, instrument.InstrumentRearImageContentType,
                 "rear", "Instrument rear photo", "emaap-photo-3-rear.jpg"),
-            (instrument.StandardWeightImageUrl, instrument.StandardWeightImageName, instrument.StandardWeightImageContentType,
+            (instrument.StandardWeightImageUrl, instrument.StandardWeightImagePath, instrument.StandardWeightImageName, instrument.StandardWeightImageContentType,
                 "weights", "Standard weight photo", "emaap-photo-4-weights.jpg"),
-            (instrument.VerificationSealImageUrl, instrument.VerificationSealImageName, instrument.VerificationSealImageContentType,
+            (instrument.VerificationSealImageUrl, instrument.VerificationSealImagePath, instrument.VerificationSealImageName, instrument.VerificationSealImageContentType,
                 "seal", "Verification seal photo", "emaap-photo-5-seal.jpg"),
         };
 
@@ -1204,7 +1204,10 @@ public sealed class AutomationService : IAsyncDisposable
                 slot.ContentType,
                 slot.Kind,
                 slot.Label,
-                cancellationToken);
+                cancellationToken,
+                slot.Path,
+                token,
+                Firebase.StorageBucket);
 
             if (downloaded is null)
             {
@@ -1228,9 +1231,9 @@ public sealed class AutomationService : IAsyncDisposable
         }
 
         var filledCount = preparedPaths.Count(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
-        var weightsPath = preparedPaths.Count > 3 ? preparedPaths[3] : string.Empty;
+        var weightsPath = VerificationWeightPhotoResolver.PickPreparedWeightsPath(preparedPaths);
 
-        // Weights photo → Instrument Certificate Upload (visible on generate form before submit).
+        // Weights photo → Instrument Certificate Upload. F2 test / F2 corner count.
         if (string.IsNullOrWhiteSpace(weightsPath) || !File.Exists(weightsPath))
         {
             throw new InvalidOperationException(

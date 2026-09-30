@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Yesgatc.CertificateWorker.Models;
 
@@ -55,23 +56,49 @@ public sealed class FirebaseStorageDownloadService
         string contentType,
         string imageKind,
         string imageLabel,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? storagePath = null,
+        string? idToken = null,
+        string? storageBucket = null)
     {
-        if (string.IsNullOrWhiteSpace(downloadUrl))
+        if (VerificationWeightPhotoResolver.LooksLikeHttp(downloadUrl))
+        {
+            try
+            {
+                return await DownloadVerificationImageAsync(
+                    jobId,
+                    serialNumber,
+                    downloadUrl,
+                    fileName,
+                    contentType,
+                    imageKind,
+                    imageLabel,
+                    cancellationToken);
+            }
+            catch (Exception)
+            {
+                // Expired token / 403 — try storage path with bearer.
+            }
+        }
+
+        var path = FirstStoragePath(storagePath, StoragePathFromDownloadUrl(downloadUrl), downloadUrl);
+        if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(idToken))
         {
             return null;
         }
 
         try
         {
-            return await DownloadVerificationImageAsync(
+            return await DownloadFromStoragePathAsync(
                 jobId,
                 serialNumber,
-                downloadUrl,
+                path,
                 fileName,
                 contentType,
                 imageKind,
                 imageLabel,
+                idToken,
+                storageBucket,
                 cancellationToken);
         }
         catch (Exception)
@@ -133,6 +160,97 @@ public sealed class FirebaseStorageDownloadService
 
         await WriteManifestAsync(download, fileName, contentType, cancellationToken);
         return download;
+    }
+
+    private async Task<StampingImageDownload> DownloadFromStoragePathAsync(
+        string jobId,
+        string serialNumber,
+        string storagePath,
+        string fileName,
+        string contentType,
+        string imageKind,
+        string imageLabel,
+        string idToken,
+        string? storageBucket,
+        CancellationToken cancellationToken)
+    {
+        var bucket = string.IsNullOrWhiteSpace(storageBucket)
+            ? "yesgatc.firebasestorage.app"
+            : storageBucket.Trim();
+        var url =
+            $"https://firebasestorage.googleapis.com/v0/b/{Uri.EscapeDataString(bucket)}/o/{Uri.EscapeDataString(storagePath)}?alt=media";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Could not download {imageLabel.ToLowerInvariant()} from storage ({(int)response.StatusCode}).");
+        }
+
+        var extension = ResolveExtension(fileName, contentType);
+        var safeSerial = SanitizePathSegment(serialNumber, "serial");
+        var jobDirectory = Path.Combine(StampingImagesDirectory, SanitizePathSegment(jobId, "job"));
+        Directory.CreateDirectory(jobDirectory);
+        var localFileName = $"{safeSerial}-{imageKind}{extension}";
+        var localPath = Path.Combine(jobDirectory, localFileName);
+
+        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
+        await using (var output = File.Create(localPath))
+        {
+            await input.CopyToAsync(output, cancellationToken);
+        }
+
+        var fileInfo = new FileInfo(localPath);
+        var download = new StampingImageDownload(
+            localPath,
+            jobDirectory,
+            localFileName,
+            fileInfo.Length,
+            url,
+            jobId,
+            serialNumber);
+        await WriteManifestAsync(download, fileName, contentType, cancellationToken);
+        return download;
+    }
+
+    private static string FirstStoragePath(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value)
+                && !VerificationWeightPhotoResolver.LooksLikeHttp(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+
+    internal static string? StoragePathFromDownloadUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)
+            || !url.Contains("firebasestorage.googleapis.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        try
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(url, @"/o/([^?]+)");
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            return Uri.UnescapeDataString(match.Groups[1].Value.Replace('+', ' '));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static async Task WriteManifestAsync(

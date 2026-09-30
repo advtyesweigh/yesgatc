@@ -52,6 +52,7 @@ import {
   resolveCertificatePdfStoragePath,
 } from '../lib/signedCertificatePdf';
 import { verificationListPartyName } from '../lib/verificationPartyDetails';
+import { verificationSuperAdminActorLabel } from '../lib/verificationSuperAdminActorLabel';
 import { prefetchPdfJs } from '../lib/pdfJs';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { SignedCertificateAvailabilityBadge } from './SignedCertificateAvailabilityBadge';
@@ -64,6 +65,7 @@ export interface VerificationListTableRecord extends SiteCalibration {
   partyPhotoUrl?: string;
   partyPhotoPath?: string;
   rcContactPerson?: string;
+  rcAdminUsername?: string;
   serialVersionCount?: number;
 }
 
@@ -385,9 +387,16 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const serial = record.serialNumber?.trim() || '—';
             const product = products.find(item => item.id === record.productId);
             const specs = verificationListSpecFields(record, product);
-            const vctName = verificationVctLabel(record, {
-              rcContactPerson: record.rcContactPerson,
-            });
+            const vctName =
+              mode === 'admin'
+                ? verificationSuperAdminActorLabel(record, {
+                    rcContactPerson: record.rcContactPerson,
+                    rcAdminUsername: record.rcAdminUsername,
+                    rcCenterName: record.rcCenterName,
+                  })
+                : verificationVctLabel(record, {
+                    rcContactPerson: record.rcContactPerson,
+                  });
             const walletPaymentDue = walletPaymentDueRecordIds?.has(record.id) ?? false;
             const zohoPushStatus =
               record.verificationType === 'RV' && zohoRvListEnabled

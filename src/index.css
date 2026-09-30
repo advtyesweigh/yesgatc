@@ -31269,8 +31269,37 @@ a.wl-live:hover {
 }
 
 .wl-rc__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.4rem;
+  row-gap: 0.1rem;
   font-size: 0.68rem;
   color: var(--wl-muted);
+}
+
+.wl-rc__meta-district {
+  min-width: 0;
+}
+
+.wl-rc__meta-split {
+  color: rgba(148, 163, 184, 0.45);
+  font-weight: 500;
+}
+
+.wl-rc__kind {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.wl-rc__kind--ov {
+  color: #4ade80;
+}
+
+.wl-rc__kind--rv {
+  color: #60a5fa;
 }
 
 .wl-rc__count {

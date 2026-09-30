@@ -282,6 +282,8 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                     customer={customer}
                     product={product}
                     rcProfile={rcProfile}
+                    superAdminMaskVerifier={user?.role === 'super_admin'}
+                    rcCenterName={rcCenterName}
                   />
                 </div>
 

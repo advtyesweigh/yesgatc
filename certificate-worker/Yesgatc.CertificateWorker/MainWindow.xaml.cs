@@ -2338,15 +2338,11 @@ public partial class MainWindow : Window
         try
         {
             var token = await GetFreshIdTokenAsync();
-            if (outcome == PipelineFailureClassifier.Outcome.Rejected)
+            await _firestoreService.RecordSubmitFailureAsync(job.Id, error, token, retryExhausted: true);
+            if (PipelineFailureClassifier.IsPermanentDataFailure(error))
             {
-                await _firestoreService.RecordRejectionAsync(job.Id, error, token);
                 _jobRetries.MarkExhausted(job.Id, error, ResolveMaxRetriesFor(job));
                 RefreshRetryBadges();
-            }
-            else
-            {
-                await _firestoreService.RecordSubmitFailureAsync(job.Id, error, token, retryExhausted: true);
             }
         }
         catch
@@ -3127,7 +3123,7 @@ public partial class MainWindow : Window
             || PipelineFailureClassifier.IsPermanentDataFailure(result.Message))
         {
             var suffix = PipelineFailureClassifier.IsPermanentDataFailure(result.Message)
-                ? " (permanent data error — marked Rejected)"
+                ? " (permanent data error — marked Failed at submit)"
                 : $" (worker stopped after {ResolveMaxRetriesFor(job)} submit retries — marked Failed at submit)";
             await RecordPipelineFailureAsync(job, $"{result.Message}{suffix}", exhausted: true);
         }

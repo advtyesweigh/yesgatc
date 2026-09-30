@@ -11,11 +11,11 @@ public sealed class PipelineFailureClassifierTests
     [InlineData("party name is empty")]
     [InlineData("zohoInvoiceNumber missing")]
     [InlineData("Record already exists for serial")]
-    public void Permanent_data_errors_reject(string error)
+    public void Permanent_data_errors_failed_submit(string error)
     {
         Assert.True(PipelineFailureClassifier.IsPermanentDataFailure(error));
         Assert.Equal(
-            PipelineFailureClassifier.Outcome.Rejected,
+            PipelineFailureClassifier.Outcome.FailedSubmit,
             PipelineFailureClassifier.Classify(error, retryExhausted: false));
     }
 

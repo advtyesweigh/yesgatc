@@ -72,39 +72,64 @@ public sealed class InstrumentDetailsService
             FirestoreFieldReader.ReadString(calibrationFields, "serialNumber"),
             job.SerialNumber);
 
-        var stampingImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "stampingImageUrl");
-        var stampingImageName = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "stampingImageName"),
-            "Stamping plate image");
-        var stampingImageContentType = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "stampingImageContentType"),
-            "image/jpeg");
+        var stamping = VerificationWeightPhotoResolver.ResolvePlate(
+            ReadLocatedPhoto(calibrationFields, "stampingImageUrl", "stampingImagePath",
+                "stampingImageName", "Stamping plate image"),
+            ReadLocatedPhoto(calibrationFields, "serialPlateImageUrl", "serialPlateImagePath",
+                "serialPlateImageName", "Serial plate image"),
+            ReadLocatedPhoto(calibrationFields, "serialNumberPlateImageUrl", "serialNumberPlateImagePath",
+                "serialNumberPlateImageName", "Serial number plate image"),
+            ReadLocatedPhoto(calibrationFields, "plateImageUrl", "plateImagePath",
+                "plateImageName", "Plate image"),
+            ReadLocatedPhoto(calibrationFields, "stampImageUrl", "stampImagePath",
+                "stampImageName", "Stamp image"));
+        var stampingImageUrl = stamping.Url;
+        var stampingImagePath = stamping.Path;
+        var stampingImageName = FirstNonEmpty(stamping.Name, "Stamping plate image");
+        var stampingImageContentType = FirstNonEmpty(stamping.ContentType, "image/jpeg");
 
-        var scaleImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "scaleImageUrl");
-        var scaleImageName = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "scaleImageName"),
-            "Scale image");
-        var scaleImageContentType = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "scaleImageContentType"),
-            "image/jpeg");
+        var scale = ReadLocatedPhoto(calibrationFields, "scaleImageUrl", "scaleImagePath",
+            "scaleImageName", "Scale image");
+        var scaleImageUrl = scale.Url;
+        var scaleImagePath = scale.Path;
+        var scaleImageName = FirstNonEmpty(scale.Name, "Scale image");
+        var scaleImageContentType = FirstNonEmpty(scale.ContentType, "image/jpeg");
 
-        var instrumentRearImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "instrumentRearImageUrl");
-        var instrumentRearImageName = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "instrumentRearImageName"),
-            "Instrument rear image");
-        var instrumentRearImageContentType = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "instrumentRearImageContentType"),
-            "image/jpeg");
+        var instrumentRear = ReadLocatedPhoto(
+            calibrationFields, "instrumentRearImageUrl", "instrumentRearImagePath",
+            "instrumentRearImageName", "Instrument rear image");
+        var instrumentRearImageUrl = instrumentRear.Url;
+        var instrumentRearImagePath = instrumentRear.Path;
+        var instrumentRearImageName = FirstNonEmpty(instrumentRear.Name, "Instrument rear image");
+        var instrumentRearImageContentType = FirstNonEmpty(instrumentRear.ContentType, "image/jpeg");
 
-        var standardWeightImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "standardWeightImageUrl");
-        var standardWeightImageName = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "standardWeightImageName"),
-            "Standard weight image");
+        var resolvedWeight = VerificationWeightPhotoResolver.Resolve(
+            VerificationWeightPhotoResolver.FirstWithEvidence(
+                ReadLocatedPhoto(calibrationFields, "standardWeightImageUrl", "standardWeightImagePath",
+                    "standardWeightImageName", "Standard weight image"),
+                ReadLocatedPhoto(calibrationFields, "standardWeightPhoto", "standardWeightPhotoPath",
+                    "standardWeightPhotoName", "Standard weight image"),
+                ReadLocatedPhoto(calibrationFields, "standardWeightPhotoUrl", "standardWeightPhotoPath",
+                    "standardWeightPhotoName", "Standard weight image"),
+                ReadLocatedPhoto(calibrationFields, "weightImageUrl", "weightImagePath",
+                    "weightImageName", "Weight image"),
+                ReadLocatedPhoto(calibrationFields, "weightsImageUrl", "weightsImagePath",
+                    "weightsImageName", "Weights image"),
+                ReadLocatedPhoto(calibrationFields, "weightPhotoUrl", "weightPhotoPath",
+                    "weightPhotoName", "Weight photo")),
+            scale,
+            instrumentRear);
+        var standardWeightImageUrl = resolvedWeight.Url;
+        var standardWeightImagePath = resolvedWeight.Path;
+        var standardWeightImageName = FirstNonEmpty(resolvedWeight.Name, "Standard weight image");
         var standardWeightImageContentType = FirstNonEmpty(
-            FirestoreFieldReader.ReadString(calibrationFields, "standardWeightImageContentType"),
-            "image/jpeg");
+            resolvedWeight.ContentType, "image/jpeg");
 
-        var verificationSealImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "verificationSealImageUrl");
+        var verificationSeal = ReadLocatedPhoto(
+            calibrationFields, "verificationSealImageUrl", "verificationSealImagePath",
+            "verificationSealImageName", "Verification seal image");
+        var verificationSealImageUrl = verificationSeal.Url;
+        var verificationSealImagePath = verificationSeal.Path;
         var verificationSealImageName = FirstNonEmpty(
             FirestoreFieldReader.ReadString(calibrationFields, "verificationSealImageName"),
             "Verification seal image");
@@ -215,16 +240,17 @@ public sealed class InstrumentDetailsService
             throw new InvalidOperationException("Device serial number is missing on the verification record.");
         }
 
-        if (string.IsNullOrWhiteSpace(stampingImageUrl))
+        if (!stamping.HasEvidence)
         {
             throw new InvalidOperationException(
                 "Serial number plate photo is missing on the verification record.");
         }
 
-        var scaleImageUsesStampingFallback = string.IsNullOrWhiteSpace(scaleImageUrl);
+        var scaleImageUsesStampingFallback = !scale.HasEvidence;
         if (scaleImageUsesStampingFallback)
         {
             scaleImageUrl = stampingImageUrl;
+            scaleImagePath = stampingImagePath;
             scaleImageName = stampingImageName;
             scaleImageContentType = stampingImageContentType;
         }
@@ -258,19 +284,24 @@ public sealed class InstrumentDetailsService
             UnitOfMeasurement = unitOfMeasurement,
             SerialNumber = serialNumber,
             StampingImageUrl = stampingImageUrl,
+            StampingImagePath = stampingImagePath,
             StampingImageName = stampingImageName,
             StampingImageContentType = stampingImageContentType,
             ScaleImageUrl = scaleImageUrl,
+            ScaleImagePath = scaleImagePath,
             ScaleImageName = scaleImageName,
             ScaleImageContentType = scaleImageContentType,
             ScaleImageUsesStampingFallback = scaleImageUsesStampingFallback,
             InstrumentRearImageUrl = instrumentRearImageUrl,
+            InstrumentRearImagePath = instrumentRearImagePath,
             InstrumentRearImageName = instrumentRearImageName,
             InstrumentRearImageContentType = instrumentRearImageContentType,
             StandardWeightImageUrl = standardWeightImageUrl,
+            StandardWeightImagePath = standardWeightImagePath,
             StandardWeightImageName = standardWeightImageName,
             StandardWeightImageContentType = standardWeightImageContentType,
             VerificationSealImageUrl = verificationSealImageUrl,
+            VerificationSealImagePath = verificationSealImagePath,
             VerificationSealImageName = verificationSealImageName,
             VerificationSealImageContentType = verificationSealImageContentType,
         };
@@ -365,6 +396,20 @@ public sealed class InstrumentDetailsService
             .Replace("°c", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("%", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Trim();
+    }
+
+    private static VerificationWeightPhotoResolver.Slot ReadLocatedPhoto(
+        IReadOnlyDictionary<string, System.Text.Json.JsonElement> fields,
+        string urlKey,
+        string pathKey,
+        string nameKey,
+        string defaultName)
+    {
+        return VerificationWeightPhotoResolver.Normalize(
+            FirestoreFieldReader.ReadString(fields, urlKey),
+            FirestoreFieldReader.ReadString(fields, pathKey),
+            FirstNonEmpty(FirestoreFieldReader.ReadString(fields, nameKey), defaultName),
+            FirstNonEmpty(FirestoreFieldReader.ReadString(fields, urlKey.Replace("Url", "ContentType", StringComparison.Ordinal)), "image/jpeg"));
     }
 
     private static string FirstNonEmpty(params string?[] values)

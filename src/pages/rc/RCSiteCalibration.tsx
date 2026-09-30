@@ -45,7 +45,7 @@ import {
   type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
 import {
-  buildVerificationDraftMeta,
+  buildVerificationPerformerPatch,
   buildVerificationStatusFilterOptions,
   buildVerificationTypeFilterOptions,
   canDeleteVerification,
@@ -124,6 +124,7 @@ import {
 } from '../../lib/verificationListGrouping';
 import {
   approveAndSubmitPendingRcRecords,
+  rejectCertifiedSerialDuplicateSubmits,
   rejectVerificationRecords,
   submitVerificationRecord,
   submitVerificationRecords,
@@ -657,7 +658,7 @@ export const RCSiteCalibration: React.FC = () => {
         rcContactPerson: rcProfile?.contactPerson,
       });
       const patch: Record<string, unknown> = {
-        ...buildVerificationDraftMeta(actor),
+        ...buildVerificationPerformerPatch(actor, previousRecord),
         createdByUid: verificationPerformerCreatedByUid(actor, actorUid),
       };
       if (shouldClearVerificationVctFields(actor, previousRecord)) {
@@ -873,6 +874,20 @@ export const RCSiteCalibration: React.FC = () => {
       fetchLaboratorySeal();
     });
   }, [fetchRecords, fetchCustomers, fetchLaboratorySeal]);
+
+  useEffect(() => {
+    if (records.length === 0) return;
+    let cancelled = false;
+    void rejectCertifiedSerialDuplicateSubmits(records, db)
+      .then(moved => {
+        if (cancelled || moved <= 0) return;
+        return fetchRecords();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [records, fetchRecords]);
 
   const showForm = showAddForm || editingId !== null;
   const formBusy = submitting;
@@ -1748,9 +1763,11 @@ export const RCSiteCalibration: React.FC = () => {
           await submitVerifierWorkForRcReview(draftRecordIds);
         } else {
           await submitVerificationRecords(
-            draftRecordIds.map(recordId => ({
+            draftRecordIds.map((recordId, index) => ({
               id: recordId,
               verificationType: sessionForSave.verificationType,
+              serialNumber: includedRows[index]?.serialNumber,
+              rcId: rcUid || undefined,
               ...rcFilingFieldsForSession(
                 sessionForSave,
                 filingPincode,
@@ -1943,6 +1960,8 @@ export const RCSiteCalibration: React.FC = () => {
         {
           id: record.id,
           verificationType: record.verificationType,
+          serialNumber: record.serialNumber,
+          rcId: record.rcId,
           ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
         },
         db,
@@ -2046,6 +2065,8 @@ export const RCSiteCalibration: React.FC = () => {
         toSubmit.map(record => ({
           id: record.id,
           verificationType: record.verificationType,
+          serialNumber: record.serialNumber,
+          rcId: record.rcId,
           ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
         })),
         db,
@@ -2413,6 +2434,8 @@ export const RCSiteCalibration: React.FC = () => {
           {
             id: editingId,
             verificationType: sessionForSave.verificationType,
+            serialNumber: row.serialNumber || existing.serialNumber,
+            rcId: existing.rcId || rcUid || undefined,
             ...rcFilingFieldsForSession(
               sessionForSave,
               filingPincode,

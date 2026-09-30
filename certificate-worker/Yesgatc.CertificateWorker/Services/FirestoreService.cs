@@ -483,6 +483,12 @@ public sealed class FirestoreService
         CancellationToken cancellationToken = default)
     {
         var normalized = VerificationStatuses.Normalize(newStatus);
+        if (normalized == VerificationStatuses.Draft)
+        {
+            throw new InvalidOperationException(
+                "Submitted jobs cannot move back to draft. Write failed_at_submit instead.");
+        }
+
         var now = DateTime.UtcNow.ToString("O");
         var fields = new Dictionary<string, string>
         {
@@ -530,18 +536,12 @@ public sealed class FirestoreService
             return;
         }
 
-        var now = DateTime.UtcNow.ToString("O");
-        var trimmed = error.Trim()[..Math.Min(error.Trim().Length, 500)];
-        var fields = new Dictionary<string, string>
-        {
-            ["pipelineFailedPhase"] = "submit",
-            ["pipelineFailureMessage"] = trimmed,
-            ["pipelineFailedAt"] = now,
-            ["updatedAt"] = now,
-        };
+        var now = DateTime.UtcNow;
+        var fields = BuildFailedAtSubmitFields(error, now);
+        var message = fields["pipelineFailureMessage"];
 
-        var pendingCert = TryExtractEmaapCertificateNumber(trimmed);
-        if (IsUnmatchedIssuedRowHalt(trimmed))
+        var pendingCert = TryExtractEmaapCertificateNumber(message);
+        if (IsUnmatchedIssuedRowHalt(message))
         {
             pendingCert = null;
         }
@@ -561,7 +561,29 @@ public sealed class FirestoreService
     }
 
     /// <summary>
-    /// Permanent data failure — reopen as draft so RC/VCT can fix and resubmit.
+    /// Submitted job cannot become draft. Permanent eMAAP/data fail → failed_at_submit.
+    /// </summary>
+    public static Dictionary<string, string> BuildFailedAtSubmitFields(string error, DateTime utcNow)
+    {
+        var now = utcNow.ToString("O");
+        var trimmed = error.Trim();
+        if (trimmed.Length > 500)
+        {
+            trimmed = trimmed[..500];
+        }
+
+        return new Dictionary<string, string>
+        {
+            ["status"] = VerificationStatuses.Submitted,
+            ["pipelineFailedPhase"] = "submit",
+            ["pipelineFailureMessage"] = trimmed,
+            ["pipelineFailedAt"] = now,
+            ["updatedAt"] = now,
+        };
+    }
+
+    /// <summary>
+    /// Permanent data failure — stay submitted with fail reason (failed_at_submit). Never draft.
     /// </summary>
     public async Task RecordRejectionAsync(
         string jobId,
@@ -569,33 +591,7 @@ public sealed class FirestoreService
         string idToken,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(error))
-        {
-            return;
-        }
-
-        var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
-        if (verification is null || verification.IsCertified)
-        {
-            return;
-        }
-
-        var now = DateTime.UtcNow.ToString("O");
-        var trimmed = error.Trim()[..Math.Min(error.Trim().Length, 500)];
-        var documents = new FirestoreDocumentClient(_settings);
-        await documents.PatchStringFieldsAsync(
-            "siteCalibrations",
-            jobId,
-            new Dictionary<string, string>
-            {
-                ["status"] = VerificationStatuses.Draft,
-                ["pipelineFailedPhase"] = "submit",
-                ["pipelineFailureMessage"] = trimmed,
-                ["pipelineFailedAt"] = now,
-                ["updatedAt"] = now,
-            },
-            idToken,
-            cancellationToken);
+        await RecordSubmitFailureAsync(jobId, error, idToken, retryExhausted: true, cancellationToken);
     }
 
     public async Task SetEmaapIssuedCertificateNumberAsync(

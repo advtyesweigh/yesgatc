@@ -50,6 +50,7 @@ import {
   type VerificationSignedPdfFilter,
 } from '../../lib/signedCertificatePdf';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
+import { rcAdminPersonName } from '../../lib/verificationSuperAdminActorLabel';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
 import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
@@ -59,10 +60,6 @@ import {
   collectSubmittedDeleteBatchForDisplay,
   devDeleteSubmittedVerification,
 } from '../../lib/verificationDevDelete';
-import {
-  canMoveFailedSubmitToDraft,
-  moveFailedSubmitVerificationToDraft,
-} from '../../lib/verificationPipelineRepair';
 import {
   canActorBulkResubmitFailedSubmit,
   canActorResubmitFailedSubmit,
@@ -95,6 +92,7 @@ import {
 } from '../../lib/pasSerialBank';
 import {
   approveAndSubmitPendingRcRecords,
+  rejectCertifiedSerialDuplicateSubmits,
   rejectVerificationRecords,
   submitVerificationRecord,
   submitVerificationRecords,
@@ -116,6 +114,7 @@ type RcListProfile = Pick<
   | 'place'
   | 'phone'
   | 'companyName'
+  | 'username'
 >;
 
 interface VerificationRow extends SiteCalibration {
@@ -153,7 +152,6 @@ export const AdminVerificationList: React.FC = () => {
   const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [movingToDraftId, setMovingToDraftId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
   const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(() => new Set());
@@ -197,6 +195,7 @@ export const AdminVerificationList: React.FC = () => {
             place: data.place,
             phone: data.phone,
             companyName: data.companyName,
+            username: data.username,
           });
         }
       });
@@ -249,6 +248,20 @@ export const AdminVerificationList: React.FC = () => {
   useEffect(() => {
     void fetchRecords();
   }, [fetchRecords]);
+
+  useEffect(() => {
+    if (records.length === 0) return;
+    let cancelled = false;
+    void rejectCertifiedSerialDuplicateSubmits(records, db)
+      .then(moved => {
+        if (cancelled || moved <= 0) return;
+        return fetchRecords();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [records, fetchRecords]);
 
   useEffect(() => {
     if (!pendingStatusFilter) return;
@@ -564,39 +577,6 @@ export const AdminVerificationList: React.FC = () => {
     }
   };
 
-  const handleMoveToDraft = async (record: VerificationRow) => {
-    if (!canMoveFailedSubmitToDraft(record, isSuperAdmin)) return;
-
-    const appNo = record.applicationNumber?.trim() || '—';
-    const serial = record.serialNumber?.trim() || '—';
-    const ok = await confirm({
-      title: 'Move to draft?',
-      message: [
-        `Move App ${appNo} (serial ${serial}) back to draft?`,
-        '',
-        'RC/VCT can then open it, fix photos or pincode, and submit again.',
-        'Application number is kept. Worker will not process it until resubmitted.',
-      ].join('\n'),
-      messageFormat: 'preline',
-      confirmLabel: 'Move to draft',
-    });
-    if (!ok) return;
-
-    setMovingToDraftId(record.id);
-    setListError('');
-    try {
-      await moveFailedSubmitVerificationToDraft(record.id);
-      if (viewingRecord?.id === record.id) {
-        setViewingRecord(null);
-      }
-      await fetchRecords();
-    } catch (err: unknown) {
-      setListError(err instanceof Error ? err.message : 'Failed to move verification to draft.');
-    } finally {
-      setMovingToDraftId(null);
-    }
-  };
-
   const recordSubmitOptions = useCallback(
     (record: SiteCalibration) => {
       const listedCustomer = record.customerId
@@ -813,6 +793,8 @@ export const AdminVerificationList: React.FC = () => {
           toSubmit.map(record => ({
             id: record.id,
             verificationType: record.verificationType,
+            serialNumber: record.serialNumber,
+            rcId: record.rcId,
           })),
           db,
           submitOptions,
@@ -875,6 +857,8 @@ export const AdminVerificationList: React.FC = () => {
         {
           id: record.id,
           verificationType: record.verificationType,
+          serialNumber: record.serialNumber,
+          rcId: record.rcId,
         },
         db,
         submitOptions,
@@ -1150,7 +1134,7 @@ export const AdminVerificationList: React.FC = () => {
           rcCenterName={viewingRecord.rcCenterName}
           rcContactPerson={
             viewingRecord.rcId
-              ? rcUsersById.get(viewingRecord.rcId)?.contactPerson
+              ? rcAdminPersonName(rcUsersById.get(viewingRecord.rcId)) || null
               : null
           }
           customer={
@@ -1368,9 +1352,7 @@ export const AdminVerificationList: React.FC = () => {
                 flashRecordId={rowHighlightFlashId}
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
                 adminDevDeleteEnabled={isSuperAdmin}
-                adminMoveFailedSubmitEnabled={isSuperAdmin}
                 onDelete={record => void handleDelete(record as VerificationRow)}
-                onMoveToDraft={record => void handleMoveToDraft(record as VerificationRow)}
                 onResubmitFailedSubmit={record => void handleResubmitFailedRecord(record)}
                 canResubmitFailedSubmit={record =>
                   canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })
@@ -1381,7 +1363,6 @@ export const AdminVerificationList: React.FC = () => {
                     : undefined
                 }
                 deletingId={deletingId}
-                movingToDraftId={movingToDraftId}
                 submitting={submitting}
                 bulkSelect={
                   isSuperAdmin

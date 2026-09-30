@@ -1,10 +1,14 @@
 import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
+  buildLiveCertifiedSerialKeySet,
   buildRcApproveVerifierPatch,
   buildVerificationRejectPatch,
+  certifiedSerialAlreadyUsedReason,
+  isOvCertifiedSerialDuplicate,
   buildVerificationSubmitPatch,
   buildVerifierRcReviewPatch,
+  planCertifiedSerialDuplicateRejects,
 } from './verificationRequest';
 import { filterPendingRcSubmitTargets } from './verificationPendingRcBulk';
 import { verificationClientVersionFields } from './verificationAppVersion';
@@ -16,6 +20,8 @@ import type { RcFilingPartyPatch } from './keralaRegion';
 export type VerificationSubmitTarget = {
   id: string;
   verificationType?: JobType | '';
+  serialNumber?: string;
+  rcId?: string;
 } & Partial<RcFilingPartyPatch>;
 
 export type VerificationSubmitOptions = {
@@ -61,6 +67,38 @@ async function hideOvCertsIfEditResubmit(
  * When Zoho RV invoicing is enabled, RV records are invoiced in Zoho while still draft,
  * then marked submitted; OV records submit immediately as before.
  */
+function recordForCertifiedDupeCheck(
+  target: VerificationSubmitTarget,
+  lookup: SiteCalibration[],
+): SiteCalibration {
+  const found = lookup.find(row => row.id === target.id);
+  if (found) return found;
+  return {
+    id: target.id,
+    verificationType: target.verificationType || 'OV',
+    serialNumber: target.serialNumber || '',
+    rcId: target.rcId || '',
+    status: 'draft',
+    customerName: '',
+  } as SiteCalibration;
+}
+
+export async function rejectCertifiedSerialDuplicateSubmits(
+  records: SiteCalibration[],
+  firestore: Firestore = db,
+): Promise<number> {
+  const targets = planCertifiedSerialDuplicateRejects(records);
+  if (targets.length === 0) return 0;
+  await rejectVerificationRecords(
+    targets.map(record => ({
+      id: record.id,
+      reason: certifiedSerialAlreadyUsedReason(record.serialNumber),
+    })),
+    firestore,
+  );
+  return targets.length;
+}
+
 export async function submitVerificationRecords(
   targets: VerificationSubmitTarget[],
   firestore: Firestore = db,
@@ -68,10 +106,35 @@ export async function submitVerificationRecords(
 ): Promise<void> {
   if (targets.length === 0) return;
 
-  const rvTargets = targets.filter(target => target.verificationType === 'RV');
-  const nonRvTargets = targets.filter(target => target.verificationType !== 'RV');
+  const lookup = options?.lookupRecords ?? [];
+  const lookupWithTargets = [
+    ...lookup,
+    ...targets.map(target => recordForCertifiedDupeCheck(target, lookup)),
+  ];
+  const certifiedKeys = buildLiveCertifiedSerialKeySet(lookupWithTargets);
+  const rejectTargets: Array<{ id: string; reason: string }> = [];
+  const submitTargets: VerificationSubmitTarget[] = [];
+  for (const target of targets) {
+    const record = recordForCertifiedDupeCheck(target, lookupWithTargets);
+    if (isOvCertifiedSerialDuplicate(record, certifiedKeys)) {
+      rejectTargets.push({
+        id: target.id,
+        reason: certifiedSerialAlreadyUsedReason(record.serialNumber || target.serialNumber),
+      });
+      continue;
+    }
+    submitTargets.push(target);
+  }
 
-  await hideOvCertsIfEditResubmit(firestore, targets, options);
+  if (rejectTargets.length > 0) {
+    await rejectVerificationRecords(rejectTargets, firestore);
+  }
+  if (submitTargets.length === 0) return;
+
+  const rvTargets = submitTargets.filter(target => target.verificationType === 'RV');
+  const nonRvTargets = submitTargets.filter(target => target.verificationType !== 'RV');
+
+  await hideOvCertsIfEditResubmit(firestore, submitTargets, options);
 
   const submitNonRv = nonRvTargets.map(target =>
     updateDoc(doc(firestore, 'siteCalibrations', target.id), submitPatch(target)),

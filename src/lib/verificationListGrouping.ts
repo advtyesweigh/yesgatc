@@ -4,7 +4,9 @@ import {
   normalizeSerialKey,
 } from './verificationResubmit';
 import {
+  buildLiveCertifiedSerialKeySet,
   canShowVerificationCertifiedActions,
+  isOvCertifiedSerialDuplicate,
   isVerificationCertifiedOnDoca,
   isVerificationFailedAtCertification,
   isVerificationRejected,
@@ -182,6 +184,11 @@ export function matchesVerificationListStatusFilter(
     return isVerificationListDuplicate(record, primaryIds);
   }
   if (filter === 'all') return true;
+  if (filter === 'submitted' || filter === 'approved') {
+    if (!matchesVerificationStatusFilter(record, 'submitted')) return false;
+    const certifiedKeys = buildLiveCertifiedSerialKeySet(_allRecords);
+    return !isOvCertifiedSerialDuplicate(record, certifiedKeys);
+  }
   return matchesVerificationStatusFilter(record, filter);
 }
 

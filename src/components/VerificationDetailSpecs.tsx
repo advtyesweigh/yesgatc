@@ -9,6 +9,7 @@ import {
   formatVerificationCapAcc,
   verificationVctLabel,
 } from '../lib/verificationRequest';
+import { verificationSuperAdminActorLabel } from '../lib/verificationSuperAdminActorLabel';
 import {
   resolveVerificationParty,
   resolveVerificationProduct,
@@ -26,6 +27,9 @@ export type VerificationDetailSpecsProps = {
   omitChromeFields?: boolean;
   /** RC contact person fallback when performedBy is rc and record has no stamped name. */
   rcContactPerson?: string | null;
+  /** Super Admin: verifier jobs show parent RC name, not third-party verifier. */
+  superAdminMaskVerifier?: boolean;
+  rcCenterName?: string | null;
   className?: string;
 };
 
@@ -73,6 +77,8 @@ export const VerificationDetailSpecs: React.FC<VerificationDetailSpecsProps> = (
   rcProfile = null,
   omitChromeFields: _omitChromeFields = false,
   rcContactPerson = null,
+  superAdminMaskVerifier = false,
+  rcCenterName = null,
   className = '',
 }) => {
   const party = resolveVerificationParty(record, { customer, rc: rcProfile });
@@ -126,7 +132,15 @@ export const VerificationDetailSpecs: React.FC<VerificationDetailSpecsProps> = (
           {record.verificationType === 'RV' && record.manufacturingYear != null ? (
             <Field label="Mfg year" value={String(record.manufacturingYear)} />
           ) : null}
-          <Field label="VCT" value={verificationVctLabel(record, { rcContactPerson })} full />
+          <Field
+            label="VCT"
+            value={
+              superAdminMaskVerifier
+                ? verificationSuperAdminActorLabel(record, { rcContactPerson, rcCenterName })
+                : verificationVctLabel(record, { rcContactPerson })
+            }
+            full
+          />
           <Field label="Seal ID" value={displayText(record.sealIdentificationNumber)} mono full />
           <Field label="Climate" value={climate} />
         </div>

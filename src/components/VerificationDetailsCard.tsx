@@ -17,6 +17,8 @@ type VerificationDetailsCardProps = {
   product?: Product | null;
   rcProfile?: VerificationRcPartyProfile | null;
   className?: string;
+  superAdminMaskVerifier?: boolean;
+  rcCenterName?: string | null;
 };
 
 export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = ({
@@ -25,6 +27,8 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
   product = null,
   rcProfile = null,
   className = '',
+  superAdminMaskVerifier = false,
+  rcCenterName = null,
 }) => {
   const isVoided = isVerificationCertificateVoided(record);
   const { customer: linkedCustomer, product: linkedProduct } = useVerificationDetailDocs(record, {
@@ -51,6 +55,8 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
         product={linkedProduct}
         rcProfile={rcProfile}
         omitChromeFields
+        superAdminMaskVerifier={superAdminMaskVerifier}
+        rcCenterName={rcCenterName}
       />
 
       {attachments.length > 0 && (

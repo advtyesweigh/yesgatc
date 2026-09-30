@@ -2,7 +2,8 @@ namespace Yesgatc.CertificateWorker.Services;
 
 /// <summary>
 /// Classifies eMAAP worker errors for Firebase status updates.
-/// Permanent → status=rejected. Recoverable exhausted → pipelineFailedPhase=submit.
+/// Permanent or retries exhausted → status stays submitted; pipelineFailedPhase=submit.
+/// Never demotes submitted → draft.
 /// </summary>
 public static class PipelineFailureClassifier
 {
@@ -14,7 +15,7 @@ public static class PipelineFailureClassifier
         /// <summary>status stays submitted; pipelineFailedPhase=submit (Failed at submit).</summary>
         FailedSubmit,
 
-        /// <summary>Reopen as draft so RC/VCT can fix and resubmit.</summary>
+        /// <summary>Legacy alias — Classify maps this to FailedSubmit (never draft).</summary>
         Rejected,
     }
 
@@ -23,7 +24,7 @@ public static class PipelineFailureClassifier
         var message = error ?? string.Empty;
         if (IsPermanentDataFailure(message))
         {
-            return Outcome.Rejected;
+            return Outcome.FailedSubmit;
         }
 
         // PDF HALT / resume path — mark failed_submit so UI shows it, but keep pending cert.

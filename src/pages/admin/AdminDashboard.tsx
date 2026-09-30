@@ -39,6 +39,7 @@ import {
   type DashboardPeriod,
 } from '../../lib/dashboardPeriod';
 import {
+  certifiedTypeCountsByRcId,
   rankRcsByCertifiedCount,
   saveRcCertificationRanks,
 } from '../../lib/rcCertificationRank';
@@ -60,10 +61,16 @@ type RcRow = {
   name: string;
   district: string;
   count: number;
+  ovCount: number;
+  rvCount: number;
   rank: number;
   logoUrl?: string;
   logoPath?: string;
 };
+
+function formatKindCount(n: number): string {
+  return n.toLocaleString('en-IN');
+}
 
 function WlRcLogo({ url, path }: { url?: string; path?: string }) {
   const [failed, setFailed] = useState(false);
@@ -251,19 +258,23 @@ export const AdminDashboard: React.FC = () => {
   const listDuration = dashboardPeriodToListDuration(period);
 
   const rcRows = useMemo<RcRow[]>(() => {
+    const rcIds = rcUsers.map(rc => rc.id);
     const rcById = new Map(rcUsers.map(rc => [rc.id, rc]));
-    return rankRcsByCertifiedCount(
-      scopedVerifications,
-      rcUsers.map(rc => rc.id),
-    ).map((row, index) => ({
-      id: row.rcId,
-      name: rcById.get(row.rcId)?.name || 'Unknown RC',
-      district: rcById.get(row.rcId)?.district || '—',
-      count: row.certified,
-      rank: index + 1,
-      logoUrl: rcById.get(row.rcId)?.logoUrl,
-      logoPath: rcById.get(row.rcId)?.logoPath,
-    }));
+    const typeCounts = certifiedTypeCountsByRcId(scopedVerifications, rcIds);
+    return rankRcsByCertifiedCount(scopedVerifications, rcIds).map((row, index) => {
+      const kinds = typeCounts.get(row.rcId) ?? { ov: 0, rv: 0, total: 0 };
+      return {
+        id: row.rcId,
+        name: rcById.get(row.rcId)?.name || 'Unknown RC',
+        district: rcById.get(row.rcId)?.district || '—',
+        count: row.certified,
+        ovCount: kinds.ov,
+        rvCount: kinds.rv,
+        rank: index + 1,
+        logoUrl: rcById.get(row.rcId)?.logoUrl,
+        logoPath: rcById.get(row.rcId)?.logoPath,
+      };
+    });
   }, [scopedVerifications, rcUsers]);
 
   const stages = useMemo<StageCard[]>(
@@ -544,7 +555,18 @@ export const AdminDashboard: React.FC = () => {
                   </span>
                   <span className="wl-rc__body">
                     <span className="wl-rc__name">{rc.name}</span>
-                    <span className="wl-rc__meta">{rc.district}</span>
+                    <span className="wl-rc__meta">
+                      <span className="wl-rc__meta-district">{rc.district}</span>
+                      <span className="wl-rc__meta-split" aria-hidden>
+                        |
+                      </span>
+                      <span className="wl-rc__kind wl-rc__kind--ov" title={`${rc.ovCount} OV`}>
+                        OV {formatKindCount(rc.ovCount)}
+                      </span>
+                      <span className="wl-rc__kind wl-rc__kind--rv" title={`${rc.rvCount} RV`}>
+                        RV {formatKindCount(rc.rvCount)}
+                      </span>
+                    </span>
                   </span>
                   <span className="wl-rc__count">{rc.count}</span>
                 </Link>
