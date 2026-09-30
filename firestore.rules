@@ -121,6 +121,23 @@ service cloud.firestore {
         : data.get('status', 'draft');
     }
 
+    // submitted / approved / certified / rejected / pending_rc must never become draft
+    // (failed_at_submit is status submitted). RC may still resubmit fail → submitted.
+    function verificationLockedAwayFromDraft(data) {
+      return verificationRecordStatus(data) in [
+        'submitted',
+        'approved',
+        'certified',
+        'rejected',
+        'pending_rc'
+      ];
+    }
+
+    function verificationUpdateDoesNotRevertToDraft() {
+      return verificationRecordStatus(request.resource.data) != 'draft'
+        || !verificationLockedAwayFromDraft(resource.data);
+    }
+
     function zohoRvInvoicingEnabled() {
       return get(/databases/$(database)/documents/appSettings/global).data.get('zohoRvInvoicingEnabled', true) != false;
     }
@@ -496,7 +513,8 @@ service cloud.firestore {
       }
 
       allow read: if isSuperAdmin();
-      allow create, update: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() && verificationUpdateDoesNotRevertToDraft();
       allow delete: if isSuperAdmin()
         && verificationRecordStatus(resource.data) == 'draft';
 
@@ -572,6 +590,7 @@ service cloud.firestore {
         && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
         && verificationRecordStatus(request.resource.data) != 'approved'
@@ -583,6 +602,7 @@ service cloud.firestore {
         && meetsMinVerificationAppVersion();
 
       allow update: if isOperationalVct()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == vctRcId()
         && request.resource.data.rcId == resource.data.rcId
         && vctOwnsVerification(resource.data)
@@ -595,6 +615,7 @@ service cloud.firestore {
         && meetsMinVerificationAppVersion();
 
       allow update: if isOperationalVerifier()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == vctRcId()
         && request.resource.data.rcId == resource.data.rcId
         && vctOwnsVerification(resource.data)
@@ -607,6 +628,7 @@ service cloud.firestore {
 
       // VCT — re-queue own failed-at-submit job (same document, not a clone).
       allow update: if isOperationalVct()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == vctRcId()
         && request.resource.data.rcId == resource.data.rcId
         && vctOwnsVerification(resource.data)
@@ -614,6 +636,7 @@ service cloud.firestore {
         && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
         && verificationRecordStatus(resource.data) == 'pending_rc'
@@ -624,13 +647,16 @@ service cloud.firestore {
         && meetsMinVerificationAppVersion();
 
       // RC emaapengine — certify / fail / void own submitted jobs (same pipeline as VPS worker).
+      // Never submitted/approved/certified → draft. Fail stays submitted (failed_at_submit).
       allow update: if isRCAdmin()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
         && verificationRecordStatus(resource.data) in ['submitted', 'approved', 'certified']
-        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted', 'approved', 'certified']
+        && verificationRecordStatus(request.resource.data) in ['submitted', 'approved', 'certified', 'rejected']
         && verificationApplicationNumberUnchanged();
       allow update: if isRCAdmin()
+        && verificationUpdateDoesNotRevertToDraft()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
         && verificationRecordStatus(resource.data) == 'submitted'

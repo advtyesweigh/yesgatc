@@ -1,9 +1,6 @@
-const { FieldValue } = require('firebase-admin/firestore');
+/** Age before rejected records were historically reopened as draft. Path is dead. */
 
-const APP_SETTINGS_COLLECTION = 'appSettings';
-const APP_SETTINGS_GLOBAL_DOC = 'global';
 
-/** Age before rejected records are reopened as draft. Failed-at-submit uses auto-resubmit. */
 const STALE_AGE_MS = 12 * 60 * 60 * 1000;
 const QUERY_LIMIT = 150;
 const BATCH_LIMIT = 50;
@@ -35,19 +32,10 @@ function isEligibleStaleCandidate(_data, _nowMs) {
   return false;
 }
 
-function draftReopenPatch(nowIso) {
-  return {
-    status: 'draft',
-    updatedAt: nowIso,
-    submittedAt: FieldValue.delete(),
-    approvedAt: FieldValue.delete(),
-    certifiedAt: FieldValue.delete(),
-    pipelineFailedPhase: FieldValue.delete(),
-    pipelineFailureMessage: FieldValue.delete(),
-    pipelineFailedAt: FieldValue.delete(),
-    certificationLastError: FieldValue.delete(),
-    rejectedAt: FieldValue.delete(),
-  };
+function draftReopenPatch(_nowIso) {
+  throw new Error(
+    'Submitted / rejected / failed-at-submit jobs cannot move back to draft.',
+  );
 }
 
 async function collectStaleCandidates(db, nowMs, limit) {

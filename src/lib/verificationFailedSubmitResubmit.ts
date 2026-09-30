@@ -1,11 +1,8 @@
 import type { Role, SiteCalibration } from '../types';
 
-/**
- * Failed-at-submit stays failed until RC/admin **manual** per-row resubmit.
- * Scheduled auto-resubmit is off. Constants kept for old docs/tests.
- */
-export const FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS = 12 * 60 * 60 * 1000;
-export const FAILED_SUBMIT_AUTO_RESUBMIT_MAX = 3;
+/** Hourly Cloud Function re-investigates failed-at-submit. Never writes draft. */
+export const FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS = 60 * 60 * 1000;
+export const FAILED_SUBMIT_AUTO_RESUBMIT_MAX = 50;
 
 export type FailedSubmitResubmitSource = 'manual' | 'bulk' | 'auto';
 
@@ -19,6 +16,8 @@ export type FailedSubmitResubmitFields = Pick<
   | 'certificateVoidedAt'
   | 'signedCertificatePdfUrl'
   | 'autoResubmitCount'
+  | 'lastAutoResubmitAt'
+  | 'lastFailedSubmitInvestigateAt'
   | 'rcId'
   | 'createdByUid'
   | 'vctId'
@@ -50,11 +49,25 @@ export function isEligibleFailedSubmitManualResubmit(
   return isFailedAtSubmitJob(record);
 }
 
+function parseIsoMs(value: string | undefined): number | null {
+  if (!value?.trim()) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export function isEligibleFailedSubmitAutoResubmit(
-  _record: FailedSubmitResubmitFields,
-  _nowMs: number,
+  record: FailedSubmitResubmitFields,
+  nowMs: number,
 ): boolean {
-  return false;
+  if (!isEligibleFailedSubmitManualResubmit(record)) return false;
+  const stamps = [
+    parseIsoMs(record.pipelineFailedAt),
+    parseIsoMs(record.lastAutoResubmitAt),
+    parseIsoMs(record.lastFailedSubmitInvestigateAt),
+  ].filter((ms): ms is number => ms != null);
+  const last = stamps.length ? Math.max(...stamps) : null;
+  if (last == null) return true;
+  return nowMs - last >= FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS;
 }
 
 export function filterFailedSubmitResubmitTargets<T extends FailedSubmitResubmitFields>(

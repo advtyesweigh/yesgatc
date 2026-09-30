@@ -33,22 +33,23 @@ function rec(
 }
 
 describe('failed-at-submit resubmit eligibility', () => {
-  it('never auto-resubmits failed-at-submit — stay until manual retry', () => {
+  it('auto-resubmits failed-at-submit after 1 hour', () => {
     const record = rec({ id: 'a' });
     assert.equal(isEligibleFailedSubmitManualResubmit(record), true);
-    assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), false);
+    assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), true);
+    assert.equal(FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS, HOUR);
   });
 
   it('skips too-fresh fails for auto but still allows manual', () => {
     const record = rec({
       id: 'fresh',
-      pipelineFailedAt: new Date(NOW - 2 * HOUR).toISOString(),
+      pipelineFailedAt: new Date(NOW - 30 * 60 * 1000).toISOString(),
     });
     assert.equal(isEligibleFailedSubmitManualResubmit(record), true);
     assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), false);
   });
 
-  it('skips auto when last fail is exactly under 12h', () => {
+  it('skips auto when last fail is under 1h', () => {
     const record = rec({
       id: 'edge',
       pipelineFailedAt: new Date(NOW - FAILED_SUBMIT_AUTO_RESUBMIT_AFTER_MS + 1).toISOString(),
@@ -85,13 +86,13 @@ describe('failed-at-submit resubmit eligibility', () => {
     assert.equal(isEligibleFailedSubmitManualResubmit(record), false);
   });
 
-  it('stops auto after the cap', () => {
+  it('does not lifetime-cap hourly investigate (batch cap is per run)', () => {
     const record = rec({
       id: 'capped',
       autoResubmitCount: FAILED_SUBMIT_AUTO_RESUBMIT_MAX,
     });
     assert.equal(isEligibleFailedSubmitManualResubmit(record), true);
-    assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), false);
+    assert.equal(isEligibleFailedSubmitAutoResubmit(record, NOW), true);
   });
 });
 

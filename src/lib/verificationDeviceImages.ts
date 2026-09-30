@@ -176,6 +176,55 @@ export function deviceVerificationImagesFromRows(
   return Object.fromEntries(rows.map(row => [row.localId, emptyDeviceVerificationImagesState()]));
 }
 
+function recordHasImageSlot(
+  record: Partial<SiteCalibration>,
+  urlKey: keyof SiteCalibration,
+  pathKey: keyof SiteCalibration,
+): boolean {
+  const url = (record[urlKey] as string | undefined)?.trim() ?? '';
+  const path = (record[pathKey] as string | undefined)?.trim() ?? '';
+  return Boolean(url || path);
+}
+
+/** eMAAP serial plate — stamping slot plus legacy plate aliases (url or path). */
+export function recordHasSerialPlatePhoto(
+  record: Partial<SiteCalibration> & Record<string, unknown>,
+): boolean {
+  if (recordHasImageSlot(record, 'stampingImageUrl', 'stampingImagePath')) return true;
+  const aliases = [
+    ['serialPlateImageUrl', 'serialPlateImagePath'],
+    ['serialNumberPlateImageUrl', 'serialNumberPlateImagePath'],
+    ['plateImageUrl', 'plateImagePath'],
+    ['stampImageUrl', 'stampImagePath'],
+  ] as const;
+  return aliases.some(([urlKey, pathKey]) => {
+    const url = String(record[urlKey] ?? '').trim();
+    const path = String(record[pathKey] ?? '').trim();
+    return Boolean(url || path);
+  });
+}
+
+/** eMAAP weights slot — F2 test, F2 corner, small weights, and legacy aliases. */
+export function recordHasStandardWeightPhoto(
+  record: Partial<SiteCalibration> & Record<string, unknown>,
+): boolean {
+  if (recordHasImageSlot(record, 'standardWeightImageUrl', 'standardWeightImagePath')) return true;
+  if (recordHasImageSlot(record, 'scaleImageUrl', 'scaleImagePath')) return true;
+  if (recordHasImageSlot(record, 'instrumentRearImageUrl', 'instrumentRearImagePath')) return true;
+  const aliases = [
+    ['standardWeightPhoto', 'standardWeightPhotoPath'],
+    ['standardWeightPhotoUrl', 'standardWeightPhotoPath'],
+    ['weightImageUrl', 'weightImagePath'],
+    ['weightsImageUrl', 'weightsImagePath'],
+    ['weightPhotoUrl', 'weightPhotoPath'],
+  ] as const;
+  return aliases.some(([urlKey, pathKey]) => {
+    const url = String(record[urlKey] ?? '').trim();
+    const path = String(record[pathKey] ?? '').trim();
+    return Boolean(url || path);
+  });
+}
+
 export function imageMetaFromRecord(
   record: SiteCalibration,
   kind: VerificationImageKind,

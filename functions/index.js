@@ -242,12 +242,12 @@ exports.moveStaleFailedVerificationsToDraft = onSchedule(
   async () => moveStaleFailedVerificationsToDraftHandler(adminDb()),
 );
 
-/** Every 15 minutes — re-queue failed-at-submit jobs older than 12 hours (max 3 autos). */
+/** Every 1 hour — re-investigate failed-at-submit; resubmit if photo/serial gates clear. */
 exports.autoResubmitFailedSubmitVerifications = onSchedule(
   {
-    schedule: 'every 15 minutes',
+    schedule: 'every 1 hours',
     region: CALLABLE_REGION,
-    timeoutSeconds: 120,
+    timeoutSeconds: 180,
     memory: '256MiB',
   },
   async () => autoResubmitFailedSubmitVerificationsHandler(adminDb()),

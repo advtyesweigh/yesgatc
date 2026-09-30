@@ -597,6 +597,142 @@ async function run() {
       fail('RC admin can resubmit own failed-at-submit job', err);
     }
 
+    const SUPER_ADMIN_UID = 'super-admin-rules-001';
+    const SUBMITTED_LIVE = 'rc-submitted-live-001';
+    const APPROVED_LIVE = 'rc-approved-live-001';
+    const FAIL_STAY = 'rc-failed-stay-001';
+    const VERIFIER_SUBMITTED = 'vr-submitted-001';
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', SUPER_ADMIN_UID), {
+        aadhar: '333333333333',
+        role: 'super_admin',
+        username: 'Super Admin',
+      });
+      await setDoc(doc(db, 'siteCalibrations', SUBMITTED_LIVE), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-LIVE',
+        applicationNumber: 'VC/26/60',
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', APPROVED_LIVE), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'approved',
+        verificationType: 'OV',
+        serialNumber: 'SN-APPR',
+        applicationNumber: 'VC/26/61',
+        submittedAt: nowIso,
+        approvedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', FAIL_STAY), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-FAIL-STAY',
+        applicationNumber: 'VC/26/63',
+        pipelineFailedPhase: 'submit',
+        pipelineFailureMessage: 'eMAAP rejected',
+        pipelineFailedAt: nowIso,
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', VERIFIER_SUBMITTED), {
+        rcId: RC_UID,
+        createdByUid: VERIFIER_UID,
+        vctId: VERIFIER_UID,
+        performedBy: 'verifier',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-VR-SUB',
+        applicationNumber: 'VC/26/62',
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+    });
+    const superAdminDb = testEnv.authenticatedContext(SUPER_ADMIN_UID).firestore();
+
+    try {
+      await assertFails(
+        updateDoc(doc(rcDb, 'siteCalibrations', SUBMITTED_LIVE), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('RC admin cannot move submitted verification back to draft');
+    } catch (err) {
+      fail('RC admin cannot move submitted verification back to draft', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(rcDb, 'siteCalibrations', APPROVED_LIVE), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('RC admin cannot move approved verification back to draft');
+    } catch (err) {
+      fail('RC admin cannot move approved verification back to draft', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(rcDb, 'siteCalibrations', FAIL_REJECTED), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('RC admin cannot move rejected verification back to draft');
+    } catch (err) {
+      fail('RC admin cannot move rejected verification back to draft', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(rcDb, 'siteCalibrations', FAIL_STAY), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('RC admin cannot move failed-at-submit verification back to draft');
+    } catch (err) {
+      fail('RC admin cannot move failed-at-submit verification back to draft', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(superAdminDb, 'siteCalibrations', SUBMITTED_LIVE), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('Super admin cannot move submitted verification back to draft');
+    } catch (err) {
+      fail('Super admin cannot move submitted verification back to draft', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(superAdminDb, 'siteCalibrations', FAIL_REJECTED), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('Super admin cannot move rejected verification back to draft');
+    } catch (err) {
+      fail('Super admin cannot move rejected verification back to draft', err);
+    }
+
     await testEnv.withSecurityRulesDisabled(async context => {
       const db = context.firestore();
       await setDoc(doc(db, 'users', VERIFIER_UID), {
@@ -609,6 +745,18 @@ async function run() {
       });
     });
     const verifierDb = testEnv.authenticatedContext(VERIFIER_UID).firestore();
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'siteCalibrations', VERIFIER_SUBMITTED), {
+          status: 'draft',
+          updatedAt: nowIso,
+        }),
+      );
+      ok('Verifier cannot move submitted verification back to draft');
+    } catch (err) {
+      fail('Verifier cannot move submitted verification back to draft', err);
+    }
 
     const verifierOvDraft = (serialNumber, applicationNumber) => ({
       rcId: RC_UID,

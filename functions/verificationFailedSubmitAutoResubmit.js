@@ -1,19 +1,40 @@
 const { FieldValue } = require('firebase-admin/firestore');
 
-const APP_SETTINGS_COLLECTION = 'appSettings';
-const APP_SETTINGS_GLOBAL_DOC = 'global';
-
 /**
- * Auto-resubmit of failed-at-submit is disabled.
- * Jobs stay failed until RC/admin manual per-row resubmit.
+ * Hourly re-investigate of failed-at-submit.
+ * Never writes draft. Clear gates → submitted. Still blocked → stay failed, refresh reason.
  */
-const AUTO_RESUBMIT_AFTER_MS = 12 * 60 * 60 * 1000;
-const AUTO_RESUBMIT_MAX = 3;
+const AUTO_RESUBMIT_AFTER_MS = 60 * 60 * 1000;
+const AUTO_RESUBMIT_MAX = 50;
 const QUERY_LIMIT = 150;
-const BATCH_LIMIT = 50;
+const BATCH_LIMIT = 40;
+
+const PLATE_ALIASES = [
+  ['stampingImageUrl', 'stampingImagePath'],
+  ['serialPlateImageUrl', 'serialPlateImagePath'],
+  ['serialNumberPlateImageUrl', 'serialNumberPlateImagePath'],
+  ['plateImageUrl', 'plateImagePath'],
+  ['stampImageUrl', 'stampImagePath'],
+];
+
+const WEIGHT_ALIASES = [
+  ['standardWeightImageUrl', 'standardWeightImagePath'],
+  ['scaleImageUrl', 'scaleImagePath'],
+  ['instrumentRearImageUrl', 'instrumentRearImagePath'],
+  ['standardWeightPhoto', 'standardWeightPhotoPath'],
+  ['standardWeightPhotoUrl', 'standardWeightPhotoPath'],
+  ['weightImageUrl', 'weightImagePath'],
+  ['weightsImageUrl', 'weightsImagePath'],
+  ['weightPhotoUrl', 'weightPhotoPath'],
+];
+
+const MISSING_SERIAL = 'Device serial number is missing on the verification record.';
+const MISSING_PLATE = 'Serial number plate photo is missing on the verification record.';
+const MISSING_WEIGHT =
+  'Standard weight photo is missing on the verification record (needed for eMAAP Upload).';
 
 async function isFailedSubmitAutoResubmitEnabled(_db) {
-  return false;
+  return true;
 }
 
 function parseIsoMs(value) {
@@ -22,12 +43,25 @@ function parseIsoMs(value) {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function isFailedAtSubmit(data) {
-  return data?.status === 'submitted' && data?.pipelineFailedPhase === 'submit';
+function fieldText(data, key) {
+  const value = data?.[key];
+  return typeof value === 'string' ? value.trim() : '';
 }
 
-function isRejected(data) {
-  return data?.status === 'rejected';
+function hasImagePair(data, urlKey, pathKey) {
+  return Boolean(fieldText(data, urlKey) || fieldText(data, pathKey));
+}
+
+function recordHasSerialPlatePhoto(data) {
+  return PLATE_ALIASES.some(([urlKey, pathKey]) => hasImagePair(data, urlKey, pathKey));
+}
+
+function recordHasStandardWeightPhoto(data) {
+  return WEIGHT_ALIASES.some(([urlKey, pathKey]) => hasImagePair(data, urlKey, pathKey));
+}
+
+function isFailedAtSubmit(data) {
+  return data?.status === 'submitted' && data?.pipelineFailedPhase === 'submit';
 }
 
 function isUnsignedIssued(data) {
@@ -37,13 +71,36 @@ function isUnsignedIssued(data) {
   return !signed;
 }
 
-function autoResubmitCount(data) {
-  const n = Number(data?.autoResubmitCount);
-  return Number.isFinite(n) ? n : 0;
+function lastFailMs(data) {
+  const stamps = [
+    parseIsoMs(data?.pipelineFailedAt),
+    parseIsoMs(data?.lastAutoResubmitAt),
+    parseIsoMs(data?.lastFailedSubmitInvestigateAt),
+    parseIsoMs(data?.lastFailedSubmitResubmitAt),
+  ].filter(ms => ms != null);
+  return stamps.length ? Math.max(...stamps) : null;
 }
 
-function isEligibleFailedSubmitAutoResubmit(_data, _nowMs) {
-  return false;
+function isEligibleFailedSubmitAutoResubmit(data, nowMs) {
+  if (!isFailedAtSubmit(data)) return false;
+  if (data?.status === 'rejected' || data?.status === 'draft') return false;
+  if (data?.status === 'certified' || data?.status === 'approved') return false;
+  if (isUnsignedIssued(data)) return false;
+  if (typeof data?.supersededByResubmissionId === 'string' && data.supersededByResubmissionId.trim()) {
+    return false;
+  }
+  const failedMs = lastFailMs(data);
+  if (failedMs == null) return true;
+  return nowMs - failedMs >= AUTO_RESUBMIT_AFTER_MS;
+}
+
+/** Same photo/serial gates the worker uses. Never invents a serial. */
+function investigateFailedSubmit(data) {
+  const serial = fieldText(data, 'serialNumber');
+  if (!serial) return MISSING_SERIAL;
+  if (!recordHasSerialPlatePhoto(data)) return MISSING_PLATE;
+  if (!recordHasStandardWeightPhoto(data)) return MISSING_WEIGHT;
+  return null;
 }
 
 function autoResubmitPatch(nowIso) {
@@ -57,9 +114,24 @@ function autoResubmitPatch(nowIso) {
     certificationLastError: FieldValue.delete(),
     lastFailedSubmitResubmitAt: nowIso,
     lastAutoResubmitAt: nowIso,
+    lastFailedSubmitInvestigateAt: nowIso,
     autoResubmitCount: FieldValue.increment(1),
     failedSubmitResubmitSource: 'auto',
   };
+}
+
+function stayFailedPatch(reason, nowIso, previousMessage) {
+  const trimmed = reason.trim() || 'Certification could not proceed.';
+  const patch = {
+    status: 'submitted',
+    pipelineFailedPhase: 'submit',
+    updatedAt: nowIso,
+    lastFailedSubmitInvestigateAt: nowIso,
+  };
+  if (trimmed !== (previousMessage || '').trim()) {
+    patch.pipelineFailureMessage = trimmed;
+  }
+  return patch;
 }
 
 async function collectAutoResubmitCandidates(db, nowMs, limit) {
@@ -86,8 +158,8 @@ async function collectAutoResubmitCandidates(db, nowMs, limit) {
 
 async function autoResubmitFailedSubmitVerificationsHandler(db) {
   if (!(await isFailedSubmitAutoResubmitEnabled(db))) {
-    console.log('failedSubmitAutoResubmit: disabled via appSettings/global');
-    return { enabled: false, resubmitted: 0, scanned: 0 };
+    console.log('failedSubmitAutoResubmit: disabled');
+    return { enabled: false, resubmitted: 0, stayed: 0, scanned: 0 };
   }
 
   const nowMs = Date.now();
@@ -95,10 +167,20 @@ async function autoResubmitFailedSubmitVerificationsHandler(db) {
   const candidates = await collectAutoResubmitCandidates(db, nowMs, BATCH_LIMIT);
 
   let resubmitted = 0;
+  let stayed = 0;
   const errors = [];
 
-  for (const { id } of candidates) {
+  for (const { id, data } of candidates) {
     try {
+      const reason = investigateFailedSubmit(data);
+      if (reason) {
+        await db.collection('siteCalibrations').doc(id).update(
+          stayFailedPatch(reason, nowIso, data?.pipelineFailureMessage),
+        );
+        stayed += 1;
+        continue;
+      }
+
       await db.collection('siteCalibrations').doc(id).update(autoResubmitPatch(nowIso));
       resubmitted += 1;
     } catch (err) {
@@ -109,12 +191,13 @@ async function autoResubmitFailedSubmitVerificationsHandler(db) {
   }
 
   console.log(
-    `failedSubmitAutoResubmit: resubmitted=${resubmitted} candidates=${candidates.length} errors=${errors.length}`,
+    `failedSubmitAutoResubmit: resubmitted=${resubmitted} stayed=${stayed} candidates=${candidates.length} errors=${errors.length}`,
   );
 
   return {
     enabled: true,
     resubmitted,
+    stayed,
     scanned: candidates.length,
     errors,
   };
@@ -123,6 +206,13 @@ async function autoResubmitFailedSubmitVerificationsHandler(db) {
 module.exports = {
   AUTO_RESUBMIT_AFTER_MS,
   AUTO_RESUBMIT_MAX,
+  BATCH_LIMIT,
+  MISSING_SERIAL,
+  MISSING_PLATE,
+  MISSING_WEIGHT,
   isEligibleFailedSubmitAutoResubmit,
+  investigateFailedSubmit,
+  recordHasSerialPlatePhoto,
+  recordHasStandardWeightPhoto,
   autoResubmitFailedSubmitVerificationsHandler,
 };

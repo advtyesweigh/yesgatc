@@ -76,11 +76,11 @@ export function normalizeVerificationStatus(
     return raw;
   }
 
-  if (isCorruptedFirestoreString(raw) || typeof raw === 'string') {
+  if (!raw || isCorruptedFirestoreString(raw) || typeof raw === 'string') {
     return inferVerificationStatus(record);
   }
 
-  return 'draft';
+  return inferVerificationStatus(record);
 }
 
 export function sanitizeVerificationDisplayText(value: string | undefined): string {
@@ -307,6 +307,80 @@ export function isVerificationRejected(record: VerificationStatusSource): boolea
   return record.status === 'rejected';
 }
 
+/** RC + exact serial (trim + casefold). Card suffix like `(4)` is not part of the serial. */
+export function certifiedSerialMatchKey(
+  record: Pick<SiteCalibration, 'rcId' | 'serialNumber'>,
+): string | null {
+  const rcId = record.rcId?.trim();
+  const serial = record.serialNumber?.trim().toUpperCase();
+  if (!rcId || !serial) return null;
+  return `${rcId}|${serial}`;
+}
+
+export function certifiedSerialAlreadyUsedReason(serial?: string): string {
+  const trimmed = serial?.trim() || '';
+  return trimmed ? `Serial ${trimmed} is already used.` : 'Serial is already used.';
+}
+
+/** Live eMAAP/Firebase certificate — voided copies do not block a new job. */
+export function isLiveCertifiedVerification(record: SiteCalibration): boolean {
+  if (record.certificateVoidedAt?.trim()) return false;
+  if (isVerificationRejected(record)) return false;
+  return isVerificationCertifiedOnDoca(record) || isVerificationFullyCertified(record);
+}
+
+const liveCertifiedKeyCache = new WeakMap<readonly SiteCalibration[], Set<string>>();
+
+export function buildLiveCertifiedSerialKeySet(records: readonly SiteCalibration[]): Set<string> {
+  const cached = liveCertifiedKeyCache.get(records);
+  if (cached) return cached;
+  const keys = new Set<string>();
+  for (const record of records) {
+    if (!isLiveCertifiedVerification(record)) continue;
+    const key = certifiedSerialMatchKey(record);
+    if (key) keys.add(key);
+  }
+  liveCertifiedKeyCache.set(records, keys);
+  return keys;
+}
+
+/**
+ * OV (not RV) job for a serial that already has a live certified record at the same RC.
+ * Official edit-resubmit clones (`resubmittedFromId`) are left for the void-then-submit path.
+ */
+export function isOvCertifiedSerialDuplicate(
+  record: Pick<
+    SiteCalibration,
+    | 'id'
+    | 'rcId'
+    | 'serialNumber'
+    | 'verificationType'
+    | 'resubmittedFromId'
+    | 'certificateVoidedAt'
+    | 'status'
+    | 'certificateNumber'
+    | 'certificatePdfUrl'
+    | 'certifiedAt'
+  >,
+  certifiedKeys: ReadonlySet<string>,
+): boolean {
+  if (record.verificationType === 'RV') return false;
+  if (record.resubmittedFromId?.trim()) return false;
+  if (isLiveCertifiedVerification(record as SiteCalibration)) return false;
+  const key = certifiedSerialMatchKey(record);
+  return Boolean(key && certifiedKeys.has(key));
+}
+
+/** Submitted/approved queue rows that eMAAP must not pick — write rejected. */
+export function planCertifiedSerialDuplicateRejects(records: SiteCalibration[]): SiteCalibration[] {
+  const certifiedKeys = buildLiveCertifiedSerialKeySet(records);
+  return records.filter(record => {
+    const status = normalizeVerificationStatus(record);
+    if (status !== 'submitted' && status !== 'approved') return false;
+    return isOvCertifiedSerialDuplicate(record, certifiedKeys);
+  });
+}
+
 /** Incomplete certification — eligible for Super Admin eMAAP resubmit. */
 export function isCertificationFailureResubmitSource(record: SiteCalibration): boolean {
   if (isVerificationRejected(record)) return false;
@@ -474,8 +548,13 @@ export function tallyVerificationStatusFilters(
     duplicates: 0,
   };
 
+  const certifiedKeys = buildLiveCertifiedSerialKeySet(records);
   for (const record of records) {
-    tally[verificationStatusFilterBucket(record)] += 1;
+    const bucket = verificationStatusFilterBucket(record);
+    if (bucket === 'submitted' && isOvCertifiedSerialDuplicate(record, certifiedKeys)) {
+      continue;
+    }
+    tally[bucket] += 1;
   }
 
   return tally;
@@ -517,7 +596,7 @@ export function verificationVctLabel(
   record: SiteCalibration,
   options?: { rcContactPerson?: string | null },
 ): string {
-  if (record.performedBy === 'verifier' || record.requestSource === 'verifier_manual') {
+  if (isVerifierPerformed(record)) {
     return record.vctName?.trim() || record.vctId || 'Verifier';
   }
   if (record.performedBy === 'vct' || record.vctId?.trim()) {
@@ -595,6 +674,44 @@ export type VerificationDraftActorMeta =
   | { actor: 'rc'; contactPerson?: string }
   | { actor: 'vct'; vctId: string; vctName: string; workflowMode?: WorkflowMode }
   | { actor: 'verifier'; verifierId: string; verifierName: string };
+
+/**
+ * Performer fields for an existing record. Never writes status: draft onto
+ * submitted / approved / rejected / failed_at_submit jobs.
+ */
+export function buildVerificationPerformerPatch(
+  actor: VerificationDraftActorMeta,
+  previousRecord?: Pick<SiteCalibration, 'status' | 'submittedAt' | 'approvedAt' | 'certifiedAt'> | null,
+): Record<string, unknown> {
+  const meta = buildVerificationDraftMeta(actor);
+  const patch: Record<string, unknown> = {
+    performedBy: meta.performedBy,
+    requestSource: meta.requestSource,
+    ...(meta.vctId ? { vctId: meta.vctId } : {}),
+    ...(meta.vctName ? { vctName: meta.vctName } : {}),
+  };
+  if (!previousRecord) {
+    patch.status = 'draft';
+    return patch;
+  }
+  const previousStatus = normalizeVerificationStatus(previousRecord);
+  if (
+    previousStatus === 'submitted'
+    || previousStatus === 'approved'
+    || previousStatus === 'certified'
+    || previousStatus === 'rejected'
+    || previousStatus === 'pending_rc'
+    || previousRecord.submittedAt
+    || previousRecord.approvedAt
+    || previousRecord.certifiedAt
+  ) {
+    return patch;
+  }
+  if (previousStatus === 'draft') {
+    patch.status = 'draft';
+  }
+  return patch;
+}
 
 export function buildVerificationDraftMeta(
   actor: VerificationDraftActorMeta,
@@ -731,6 +848,33 @@ export function buildVerificationSubmitPatch(now = new Date().toISOString()): {
   return {
     status: 'submitted',
     submittedAt: now,
+    updatedAt: now,
+    ...verificationClientVersionFields(),
+  };
+}
+
+/**
+ * Certification cannot proceed after the job is already submitted.
+ * Status stays `submitted`; UI bucket is failed_at_submit (`pipelineFailedPhase: submit`).
+ * Never writes `draft`.
+ */
+export function buildFailedAtSubmitPatch(
+  reason: string,
+  now = new Date().toISOString(),
+): {
+  status: 'submitted';
+  pipelineFailedPhase: 'submit';
+  pipelineFailureMessage: string;
+  pipelineFailedAt: string;
+  updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
+} {
+  return {
+    status: 'submitted',
+    pipelineFailedPhase: 'submit',
+    pipelineFailureMessage: reason.trim() || 'Certification could not proceed.',
+    pipelineFailedAt: now,
     updatedAt: now,
     ...verificationClientVersionFields(),
   };

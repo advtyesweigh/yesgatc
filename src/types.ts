@@ -639,9 +639,10 @@ export interface SiteCalibration {
   pipelineFailedAt?: string;
   /**
    * Failed-at-submit re-queue (same document, not a clone).
-   * Auto scheduler caps at 3 attempts / 12h — see verificationFailedSubmitResubmit.ts.
+   * Auto scheduler re-investigates hourly — see verificationFailedSubmitResubmit.ts.
    */
   lastFailedSubmitResubmitAt?: string;
+  lastFailedSubmitInvestigateAt?: string;
   lastAutoResubmitAt?: string;
   autoResubmitCount?: number;
   failedSubmitResubmitSource?: 'manual' | 'bulk' | 'auto';

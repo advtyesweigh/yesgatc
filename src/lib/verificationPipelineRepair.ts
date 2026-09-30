@@ -13,8 +13,6 @@ import {
   inferVerificationStatus,
   isCorruptedFirestoreString,
   isCorruptedVerificationRecord,
-  isVerificationFailedAtSubmit,
-  isVerificationRejected,
   isValidVerificationIsoTimestamp,
   hasStoredCertificatePdf,
 } from './verificationRequest';
@@ -196,32 +194,20 @@ export async function repairVerificationSubmitted(
   });
 }
 
-/** Super Admin only — failed-at-submit or rejected → draft so RC/VCT can fix and resubmit. */
+/**
+ * Submitted / failed-at-submit / rejected must not reopen as draft.
+ * RC/admin uses per-row Resubmit instead.
+ */
 export function canMoveFailedSubmitToDraft(
-  record: SiteCalibration,
-  isSuperAdmin: boolean,
+  _record: SiteCalibration,
+  _isSuperAdmin: boolean,
 ): boolean {
-  if (!isSuperAdmin) return false;
-  if (record.supersededByResubmissionId?.trim()) return false;
-  return isVerificationFailedAtSubmit(record) || isVerificationRejected(record);
+  return false;
 }
 
-/**
- * Reverts a failed-at-submit or rejected record to draft.
- * Keeps applicationNumber and evidence fields; clears submit/pipeline failure markers.
- */
-export async function moveFailedSubmitVerificationToDraft(recordId: string): Promise<void> {
-  const now = new Date().toISOString();
-  await updateDoc(doc(db, 'siteCalibrations', recordId), {
-    status: 'draft' satisfies VerificationRequestStatus,
-    updatedAt: now,
-    submittedAt: deleteField(),
-    approvedAt: deleteField(),
-    certifiedAt: deleteField(),
-    pipelineFailedPhase: deleteField(),
-    pipelineFailureMessage: deleteField(),
-    pipelineFailedAt: deleteField(),
-    certificationLastError: deleteField(),
-    rejectedAt: deleteField(),
-  });
+/** Blocked: submitted jobs never write back to draft. */
+export async function moveFailedSubmitVerificationToDraft(_recordId: string): Promise<void> {
+  throw new Error(
+    'Submitted jobs cannot move back to draft. RC admin must Resubmit from the Fail list.',
+  );
 }
