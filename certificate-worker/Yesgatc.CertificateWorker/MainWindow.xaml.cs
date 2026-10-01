@@ -2353,9 +2353,9 @@ public partial class MainWindow : Window
                 await _firestoreService.RecordSubmitFailureAsync(job.Id, error, token, retryExhausted: true);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort Firebase patch — local retry state still applies.
+            AddActivityEntry($"Could not save pipeline failure for {job.SerialNumber}: {ex.Message}");
         }
     }
 
@@ -3351,6 +3351,18 @@ public partial class MainWindow : Window
             {
                 failed++;
                 lastError = ex.Message;
+                if (claimed && _session is not null)
+                {
+                    try
+                    {
+                        await _firestoreService.ReleaseClaimAsync(job.Id, _session).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Claim expires on its own.
+                    }
+                }
+
                 ScheduleJobRetry(job, ex.Message);
                 await RecordPipelineFailureAsync(job, ex.Message);
                 SetStatusSafe($"{batchLabel} failed · {ex.Message}", ex, StatusKind.Error);
@@ -3757,6 +3769,18 @@ public partial class MainWindow : Window
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref stats.Failed);
+                    if (_session is not null)
+                    {
+                        try
+                        {
+                            await _firestoreService.ReleaseClaimAsync(job.Id, _session).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            // Claim expires on its own.
+                        }
+                    }
+
                     ScheduleJobRetry(job, ex.Message);
                     _ = RecordPipelineFailureAsync(job, ex.Message);
                     lock (stats)

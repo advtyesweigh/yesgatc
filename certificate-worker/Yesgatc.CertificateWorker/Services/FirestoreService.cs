@@ -617,7 +617,7 @@ public sealed class FirestoreService
         }
 
         var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
-        if (verification is null || verification.IsCertified)
+        if (verification?.IsCertified == true)
         {
             return;
         }

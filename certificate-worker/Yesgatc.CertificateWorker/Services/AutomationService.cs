@@ -1197,7 +1197,9 @@ public sealed class AutomationService : IAsyncDisposable
                 "seal", "Verification seal photo", "emaap-photo-5-seal.jpg"),
         };
 
-        var preparedSlotPaths = await Task.WhenAll(slots.Select(async slot =>
+        // GDI+ Image.Save is not thread-safe. Parallel prepare was leaving the plate or
+        // weights JPEG missing, which the worker then reported as a permanent data error.
+        foreach (var slot in slots)
         {
             var downloaded = await imageDownload.TryDownloadVerificationImageAsync(
                 job.Id,
@@ -1211,7 +1213,8 @@ public sealed class AutomationService : IAsyncDisposable
 
             if (downloaded is null)
             {
-                return string.Empty;
+                preparedPaths.Add(string.Empty);
+                continue;
             }
 
             var prepared = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
@@ -1220,14 +1223,15 @@ public sealed class AutomationService : IAsyncDisposable
                 _settings.DocaUploadImageMaxBytes,
                 _settings.DocaUploadImageMaxEdgePx,
                 outputFileName: slot.OutFile);
-            return prepared.Path;
-        }));
-        preparedPaths.AddRange(preparedSlotPaths);
+            preparedPaths.Add(File.Exists(prepared.Path) ? prepared.Path : string.Empty);
+        }
 
         if (string.IsNullOrWhiteSpace(preparedPaths[0]) || !File.Exists(preparedPaths[0]))
         {
-            throw new InvalidOperationException(
-                "Serial number plate photo is required for eMAAP machine photo upload.");
+            throw new InvalidOperationException(PhotoPrepareFailure(
+                "Serial number plate photo",
+                instrument.StampingImageUrl,
+                "Serial number plate photo is required for eMAAP machine photo upload."));
         }
 
         var filledCount = preparedPaths.Count(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
@@ -1236,8 +1240,10 @@ public sealed class AutomationService : IAsyncDisposable
         // Weights photo → Instrument Certificate Upload (visible on generate form before submit).
         if (string.IsNullOrWhiteSpace(weightsPath) || !File.Exists(weightsPath))
         {
-            throw new InvalidOperationException(
-                "Standard weight photo is missing on the verification record (needed for eMAAP Upload).");
+            throw new InvalidOperationException(PhotoPrepareFailure(
+                "Standard weight photo",
+                instrument.StandardWeightImageUrl,
+                "Standard weight photo is missing on the verification record (needed for eMAAP Upload)."));
         }
 
         await FillStarterFormWithSessionRetryAsync(
@@ -1569,6 +1575,19 @@ public sealed class AutomationService : IAsyncDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Empty URL is a permanent data error. A URL that did not become a local file is a retry.
+    /// </summary>
+    private static string PhotoPrepareFailure(string label, string? downloadUrl, string missingOnRecordMessage)
+    {
+        if (string.IsNullOrWhiteSpace(downloadUrl))
+        {
+            return missingOnRecordMessage;
+        }
+
+        return $"Could not prepare {label.ToLowerInvariant()} for eMAAP upload. The photo is on the verification record.";
     }
 
     /// <summary>Try Automation:EmaapMasterOtp once (then caller may fall back to Firebase).</summary>
