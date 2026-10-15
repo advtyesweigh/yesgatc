@@ -126,19 +126,17 @@ export function pasBankMatchesProduct(bank: PasBankDoc, product: Product): boole
   return false;
 }
 
+/** Identity match only. A from–to never pulls another product’s seats in. It only drops seats outside this product’s own meta range. */
 export function pasBankListedForProduct(
   bank: PasBankDoc,
   product: Product,
   range?: { from?: string; to?: string } | null,
 ): boolean {
-  if (pasBankMatchesProduct(bank, product)) return true;
-  if (!range?.from || !range.to) return false;
-  const bankSku = compactIdent(bank.yesoneSku || bank.sku);
-  const productSku = compactIdent(product.yesoneSku);
-  if (bankSku && productSku && bankSku !== productSku) return false;
-  if (bankSku) return false;
+  if (!pasBankMatchesProduct(bank, product)) return false;
+  if (!range?.from || !range?.to) return true;
   const serial = String(bank.serialNumber || '').trim();
-  return Boolean(serial) && serialInInclusiveRange(serial, range.from, range.to);
+  if (!serial) return false;
+  return serialInInclusiveRange(serial, range.from, range.to);
 }
 
 function finiteCount(value?: number | null): number | null {

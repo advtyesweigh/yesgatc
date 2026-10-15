@@ -106,18 +106,25 @@ describe('pasBankMatchesProduct', () => {
 });
 
 describe('pasBankListedForProduct', () => {
-  it('keeps untagged seats only inside that product range', () => {
-    const untagged: PasBankDoc = { serialNumber: 'YJ00002' };
+  it('does not pull an untagged or 10 kg seat onto the 5 kg card', () => {
+    const untagged: PasBankDoc = { serialNumber: 'YJ00546' };
+    const ten: PasBankDoc = { serialNumber: 'YJ00546', yesoneSku: 'KS10BAY', sku: 'KS10BAY' };
     const foreign: PasBankDoc = { serialNumber: 'YJ01002', sku: 'ATM30GAY' };
     const range10 = { from: 'YJ00001', to: 'YJ00600' };
     const range5 = { from: 'YJ00601', to: 'YJ01000' };
-    assert.equal(pasBankListedForProduct(untagged, scale10, range10), true);
+    const wide5 = { from: 'YJ00001', to: 'YJ01000' };
+    assert.equal(pasBankListedForProduct(untagged, scale10, range10), false);
     assert.equal(pasBankListedForProduct(untagged, scale5, range5), false);
+    assert.equal(pasBankListedForProduct(untagged, scale5, wide5), false);
+    assert.equal(pasBankListedForProduct(ten, scale10, range10), true);
+    assert.equal(pasBankListedForProduct(ten, scale5, range5), false);
+    assert.equal(pasBankListedForProduct(ten, scale5, wide5), false);
+    assert.equal(pasBankListedForProduct({ serialNumber: 'YJ00546', sku: 'KS05BAY' }, scale5, range5), false);
     assert.equal(pasBankListedForProduct(foreign, scale10, range10), false);
     assert.equal(pasBankListedForProduct({ serialNumber: 'YJ00602', sku: 'KS05BAY' }, scale10, range10), false);
-    assert.equal(pasBankListedForProduct({ serialNumber: 'YJ00002', sku: 'KS10BAY' }, scale5, range5), false);
-    assert.equal(serialInInclusiveRange('YJ00600', 'YJ00001', 'YJ00600'), true);
-    assert.equal(serialInInclusiveRange('YJ00601', 'YJ00001', 'YJ00600'), false);
+    assert.equal(pasBankListedForProduct({ serialNumber: 'YJ00602', sku: 'KS05BAY' }, scale5, range5), true);
+    assert.equal(serialInInclusiveRange('YJ00546', 'YJ00001', 'YJ00600'), true);
+    assert.equal(serialInInclusiveRange('YJ00546', 'YJ00601', 'YJ01000'), false);
   });
 });
 

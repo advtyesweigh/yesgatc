@@ -358,20 +358,15 @@ async function queryPasBank(product: Product): Promise<{
     id: docSnap.id,
     data: (docSnap.data() || {}) as PasBankDoc,
   }));
+  const range = meta?.from && meta?.to ? { from: meta.from, to: meta.to } : null;
   const tagged: ProductSerialRow[] = [];
   for (const snap of snaps) {
-    const row = pasRowFromSnap(snap.id, snap.data, product);
+    const row = pasRowFromSnap(snap.id, snap.data, product, range);
     if (row) tagged.push(row);
   }
   const rowUsage = usageFromSerialRows(tagged);
   const usage = mergePasBankUsage(meta, rowUsage);
-  const range = usage?.from && usage.to ? { from: usage.from, to: usage.to } : null;
-  const byId = new Map<string, ProductSerialRow>();
-  for (const snap of snaps) {
-    const row = pasRowFromSnap(snap.id, snap.data, product, range);
-    if (row) byId.set(row.id, row);
-  }
-  return { rows: [...byId.values()].sort(serialSortKey), usage };
+  return { rows: tagged.sort(serialSortKey), usage };
 }
 
 async function queryGasAllotments(product: Product): Promise<ProductSerialRow[]> {
