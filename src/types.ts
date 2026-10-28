@@ -265,6 +265,11 @@ export interface FirestoreUserDoc {
   location?: CustomerLocation;
   /** OV Self eMAAP belong-to: verifier display name or parent RC name. */
   ovInName?: 'verifier' | 'rc';
+  /**
+   * Verifier only — job kinds RC allows (ov_self / ov_customer / rv_customer).
+   * Missing → OV Self only. Verifier submit always goes pending_rc for RC approve.
+   */
+  allowedJobKinds?: Array<'ov_self' | 'ov_customer' | 'rv_customer'>;
   gstNumber?: string;
   standardWeightsCertUrl?: string;
   standardWeightsCertPath?: string;

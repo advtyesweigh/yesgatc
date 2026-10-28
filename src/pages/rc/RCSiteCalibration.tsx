@@ -43,6 +43,7 @@ import {
   type VerificationDeviceRowValues,
   type VerificationJobKind,
   type VerificationSessionValues,
+  verificationJobKindsForActor,
 } from '../../lib/siteCalibrationProfileFields';
 import {
   buildVerificationDraftMeta,
@@ -2637,6 +2638,13 @@ export const RCSiteCalibration: React.FC = () => {
         setListError('RC centre details are still loading.');
         return;
       }
+      if (isVerifier) {
+        const allowed = verificationJobKindsForActor(true, actorProfile?.allowedJobKinds);
+        if (!allowed.includes(kind)) {
+          setListError('RC admin has not granted this job type.');
+          return;
+        }
+      }
       const ovName = actorProfile?.ovInName;
       if (isVerifier && (kind === 'ov_self' || kind === 'ov_customer')) {
         const ovNameMsg = validateVerifierOvStart(ovName);
@@ -3865,6 +3873,7 @@ export const RCSiteCalibration: React.FC = () => {
           ovRemainingCount={quotaSeats.ready ? pickSerials.length : undefined}
           pendingSerials={pickSerials}
           verifierMode={isVerifier}
+          allowedJobKinds={actorProfile?.allowedJobKinds}
           hasPasProducts={catalogueHasPasProducts(products)}
           onSelect={handleJobKindSelect}
           onClose={() => setShowJobKindPicker(false)}

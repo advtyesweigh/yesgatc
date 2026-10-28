@@ -21,8 +21,10 @@ type VerificationJobKindPickerProps = {
   pendingSerials: string[];
   /** Catalogue has PAS products — OV can start without GAS seats. */
   hasPasProducts?: boolean;
-  /** Verifier: only OV Self — hide OV/RV Customer + balance card. */
+  /** Verifier session — kinds filtered by allowedJobKinds. */
   verifierMode?: boolean;
+  /** Verifier RC grant; ignored for RC/VCT. */
+  allowedJobKinds?: VerificationJobKind[];
   onSelect: (kind: VerificationJobKind, serial?: string, manufacturingYear?: string) => void;
   onClose: () => void;
 };
@@ -67,6 +69,7 @@ export function VerificationJobKindPicker({
   pendingSerials,
   hasPasProducts = false,
   verifierMode = false,
+  allowedJobKinds,
   onSelect,
   onClose,
 }: VerificationJobKindPickerProps) {
@@ -90,9 +93,12 @@ export function VerificationJobKindPicker({
       : String(Math.max(0, ovBalanceQty));
 
   const visibleKinds = useMemo(() => {
-    const allowed = new Set(verificationJobKindsForActor(verifierMode));
+    const allowed = new Set(verificationJobKindsForActor(verifierMode, allowedJobKinds));
     return KINDS.filter(kind => allowed.has(kind.id));
-  }, [verifierMode]);
+  }, [verifierMode, allowedJobKinds]);
+
+  const showsRv = visibleKinds.some(kind => kind.id === 'rv_customer');
+  const showsOv = visibleKinds.some(kind => kind.ov);
 
   useHistoryOverlay(true, onClose, { suppressHistoryBackRef: skipHistoryBackRef });
 
@@ -183,7 +189,9 @@ export function VerificationJobKindPicker({
           ) : null}
         </div>
 
-        {verifierMode && ovBlocked ? (
+        {verifierMode && ovBlocked && showsOv && showsRv ? (
+          <p className="verification-job-kind-hint">No serials allotted to you. RV Customer still available.</p>
+        ) : verifierMode && ovBlocked && showsOv ? (
           <p className="verification-job-kind-hint">No serials allotted to you.</p>
         ) : !verifierMode && qtyBlocked ? (
           <p className="verification-job-kind-hint">OV quota is 0. RV Customer still available.</p>

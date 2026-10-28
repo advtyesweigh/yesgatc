@@ -8,13 +8,19 @@ import type { ImageUploadState } from './CustomerFormFields';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import {
   EMPTY_VERIFIER_LOCATION,
-  VERIFIER_GPS_REQUIRED_MESSAGE,
+  VERIFIER_GPS_OPTIONAL_HINT,
   parseVerifierLatLng,
   verifierPartyFormValues,
   type VerifierLocationValues,
 } from '../../lib/verifierProfileFields';
 import { ovInNameToggleLabels, type VerifierOvInName } from '../../lib/verifierOvInName';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
+import type { VerificationJobKind } from '../../lib/verificationJobKinds';
+import {
+  DEFAULT_VERIFIER_JOB_KINDS,
+  VERIFIER_JOB_KIND_OPTIONS,
+  toggleVerifierJobKind,
+} from '../../lib/verifierJobKinds';
 
 export type VerifierFormValues = {
   username: string;
@@ -23,6 +29,7 @@ export type VerifierFormValues = {
   email: string;
   password: string;
   ovInName: VerifierOvInName | '';
+  allowedJobKinds: VerificationJobKind[];
 } & VerifierLocationValues;
 
 export const EMPTY_VERIFIER_FORM: VerifierFormValues = {
@@ -32,6 +39,7 @@ export const EMPTY_VERIFIER_FORM: VerifierFormValues = {
   email: '',
   password: '',
   ovInName: '',
+  allowedJobKinds: [...DEFAULT_VERIFIER_JOB_KINDS],
   ...EMPTY_VERIFIER_LOCATION,
 };
 
@@ -92,6 +100,35 @@ export const VerifierFormFields: React.FC<VerifierFormFieldsProps> = ({
 
   return (
     <div className="form-grid verifier-form-grid">
+      <div className="form-group verifier-field--job-kinds">
+        <span className="verifier-ov-in-name-label" id="verifier-job-kinds-label">
+          Jobs allowed
+        </span>
+        <p className="verifier-job-kinds-hint">RC admin approves OV / RV he submits.</p>
+        <div
+          className="verifier-job-kinds"
+          role="group"
+          aria-labelledby="verifier-job-kinds-label"
+        >
+          {VERIFIER_JOB_KIND_OPTIONS.map(opt => {
+            const active = values.allowedJobKinds.includes(opt.id);
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                className={`verifier-job-kind-opt${active ? ' is-active' : ''}`}
+                aria-pressed={active}
+                disabled={fieldsLocked}
+                onClick={() =>
+                  onChange({ allowedJobKinds: toggleVerifierJobKind(values.allowedJobKinds, opt.id) })
+                }
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="form-group verifier-field--ov-in-name">
         <span className="verifier-ov-in-name-label" id="verifier-ov-in-name-label">
           OV certificate name
@@ -242,7 +279,7 @@ export const VerifierFormFields: React.FC<VerifierFormFieldsProps> = ({
           footer={
             gpsMissing ? (
               <p className="verifier-gps-hint" role="status">
-                {VERIFIER_GPS_REQUIRED_MESSAGE}
+                {VERIFIER_GPS_OPTIONAL_HINT}
               </p>
             ) : null
           }

@@ -3,8 +3,17 @@ import { describe, it } from 'node:test';
 import { verificationJobKindsForActor } from './verificationJobKinds.ts';
 
 describe('verificationJobKindsForActor', () => {
-  it('verifier sees OV Self only', () => {
+  it('verifier defaults to OV Self only', () => {
     assert.deepEqual(verificationJobKindsForActor(true), ['ov_self']);
+  });
+
+  it('verifier uses RC-granted kinds', () => {
+    assert.deepEqual(verificationJobKindsForActor(true, ['ov_self', 'ov_customer', 'rv_customer']), [
+      'ov_self',
+      'ov_customer',
+      'rv_customer',
+    ]);
+    assert.deepEqual(verificationJobKindsForActor(true, ['rv_customer']), ['rv_customer']);
   });
 
   it('RC / VCT see OV Self, OV Customer, RV Customer', () => {

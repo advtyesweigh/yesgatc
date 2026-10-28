@@ -6,8 +6,9 @@ import {
 } from './customerGps.ts';
 import type { FirestoreUserDoc } from '../types.ts';
 
-export const VERIFIER_GPS_REQUIRED_MESSAGE =
-  'Update GPS. Tap refresh to capture verifier location.';
+/** Hint only — GPS not required to add/save verifier. */
+export const VERIFIER_GPS_OPTIONAL_HINT =
+  'GPS optional. Tap refresh now, or add later.';
 
 export type VerifierLocationValues = {
   address: string;
@@ -69,23 +70,22 @@ export function validateVerifierLocation(location: VerifierLocationValues): stri
   if (!location.state.trim() || !location.district.trim()) {
     return 'Complete postal code and wait for district and state.';
   }
-  if (!parseVerifierLatLng(location)) return VERIFIER_GPS_REQUIRED_MESSAGE;
   return null;
 }
 
 export function verifierLocationPersistFields(location: VerifierLocationValues): Pick<
   FirestoreUserDoc,
-  'address' | 'pincode' | 'state' | 'district' | 'location'
-> {
+  'address' | 'pincode' | 'state' | 'district'
+> & { location?: CustomerLatLng } {
   const pin = location.pincode.trim() ? normalizePincode(location.pincode) : '';
   const parsed = parseVerifierLatLng(location);
-  return {
+  const base = {
     address: location.address.trim(),
     pincode: pin,
     state: location.state.trim(),
     district: location.district.trim(),
-    location: parsed ?? { lat: 0, lng: 0 },
   };
+  return parsed ? { ...base, location: parsed } : base;
 }
 
 /** Own-doc GPS write — lat/lng only. Rules reject any other user-field change. */
