@@ -559,10 +559,9 @@ function expandRecordList(rows, base = {}) {
   return out;
 }
 
-function serialsFromGroup(rec) {
-  const flat = withSeriesFields(rec);
+function serialNumbersFromValues(raw) {
   const listed = [];
-  for (const serial of serialValues(serialListFromRec(flat))) {
+  for (const serial of serialValues(raw)) {
     if (typeof serial === 'string' || typeof serial === 'number') {
       const text = String(serial).trim();
       if (looksLikeBankSerial(text)) listed.push(text);
@@ -571,7 +570,43 @@ function serialsFromGroup(rec) {
     const number = readSerialNumber(asRecord(serial)) || optionalTrimmed(asRecord(serial).serial);
     if (looksLikeBankSerial(number)) listed.push(number);
   }
-  const unique = [...new Set(listed)];
+  return [...new Set(listed)];
+}
+
+/** Cancel payloads often tip `serialNumbers` with one id + full remove/details/range. */
+function cancelSerialCandidates(rec) {
+  const flat = withSeriesFields(rec);
+  const invoice = asRecord(pickValue(flat, ['invoice']));
+  const pools = [
+    pickValue(flat, ['removeSerialNumbers', 'cancelledSerials']),
+    pickValue(invoice, ['removeSerialNumbers', 'cancelledSerials', 'serialNumbers', 'serials']),
+    Array.isArray(flat.generatedSerialDetails) ? flat.generatedSerialDetails : null,
+    Array.isArray(flat.rcAllottedSerialDetails) ? flat.rcAllottedSerialDetails : null,
+  ];
+  let best = [];
+  for (const pool of pools) {
+    const next = serialNumbersFromValues(pool);
+    if (next.length > best.length) best = next;
+  }
+  const qty = optionalFiniteNumber(flat.qty ?? flat.count ?? rec.qty ?? rec.count);
+  const from = flat.from || rec.startNumber || rec.from || rec.start;
+  const to = flat.to || rec.endNumber || rec.to || rec.end;
+  if (qty != null && best.length < qty) {
+    const expanded = expandSerialRange(from, to, rec.missing).filter(looksLikeBankSerial);
+    if (expanded.length > best.length) best = expanded;
+  }
+  return best;
+}
+
+function serialsFromGroup(rec) {
+  const flat = withSeriesFields(rec);
+  const unique = serialNumbersFromValues(serialListFromRec(flat));
+  const event = inferEventName(flat) || inferEventName(rec);
+  if (event === 'serial.cancelled') {
+    const cancelSet = cancelSerialCandidates(flat);
+    if (cancelSet.length > unique.length) return cancelSet;
+    if (cancelSet.length > 0 && unique.length === 0) return cancelSet;
+  }
   // An explicit serial list is the invoice. Do not fill from-to over it —
   // that stamps the invoice onto numbers that were never sold.
   if (unique.length > 0) return unique;
