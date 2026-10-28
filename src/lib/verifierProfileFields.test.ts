@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   EMPTY_VERIFIER_LOCATION,
-  VERIFIER_GPS_REQUIRED_MESSAGE,
   parseVerifierLatLng,
   validateVerifierLocation,
   verifierLocationFromUser,
@@ -11,7 +10,7 @@ import {
 } from './verifierProfileFields.ts';
 
 describe('verifier location persist', () => {
-  it('requires PIN district state and GPS', () => {
+  it('requires PIN district state; GPS optional', () => {
     assert.equal(validateVerifierLocation(EMPTY_VERIFIER_LOCATION), 'Address is required.');
     assert.equal(
       validateVerifierLocation({
@@ -21,12 +20,27 @@ describe('verifier location persist', () => {
         district: 'Ernakulam',
         state: 'Kerala',
       }),
-      VERIFIER_GPS_REQUIRED_MESSAGE,
+      null,
     );
     assert.equal(parseVerifierLatLng(EMPTY_VERIFIER_LOCATION), undefined);
+    assert.deepEqual(
+      verifierLocationPersistFields({
+        ...EMPTY_VERIFIER_LOCATION,
+        address: 'Street',
+        pincode: '682001',
+        district: 'Ernakulam',
+        state: 'Kerala',
+      }),
+      {
+        address: 'Street',
+        pincode: '682001',
+        state: 'Kerala',
+        district: 'Ernakulam',
+      },
+    );
   });
 
-  it('writes { lat, lng } on the verifier user doc', () => {
+  it('writes { lat, lng } on the verifier user doc when GPS present', () => {
     const location = {
       address: 'Street, locality',
       pincode: '682001',

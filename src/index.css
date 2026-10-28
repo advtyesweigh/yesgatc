@@ -7551,6 +7551,42 @@ body.pcd-pdf-open {
   line-height: 1.2;
 }
 
+.inline-form-panel--verifier .verifier-job-kinds-hint {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: #94a3b8;
+}
+
+.inline-form-panel--verifier .verifier-job-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.inline-form-panel--verifier .verifier-job-kind-opt {
+  min-height: 2rem;
+  padding: 0.28rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: rgba(15, 23, 42, 0.55);
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.inline-form-panel--verifier .verifier-job-kind-opt.is-active {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.38);
+  color: #fff;
+}
+
+.inline-form-panel--verifier .verifier-job-kind-opt:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .inline-form-panel--verifier .verifier-ov-in-name {
   position: relative;
   display: grid;

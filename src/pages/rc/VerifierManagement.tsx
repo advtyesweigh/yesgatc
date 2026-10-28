@@ -43,6 +43,7 @@ import { vctProfilePhotoFieldsFromMeta, vctProfilePhotoFromUser } from '../../li
 import { isValidEmail, isValidPhone, normalizePhone } from '../../lib/contactFields';
 import {
   Check,
+  ClipboardList,
   CreditCard,
   Plus,
   RefreshCw,
@@ -61,9 +62,7 @@ import {
   VerifierFormFields,
   type VerifierFormValues,
 } from './VerifierFormFields';
-import { playValidationWarningSound } from '../../lib/playUnsignedCertificateWarningSound';
 import {
-  VERIFIER_GPS_REQUIRED_MESSAGE,
   validateVerifierLocation,
   verifierLocationFromUser,
   verifierLocationPersistFields,
@@ -72,6 +71,11 @@ import {
   isVerifierOvInName,
   validateVerifierOvInName,
 } from '../../lib/verifierOvInName';
+import {
+  normalizeVerifierJobKinds,
+  validateVerifierJobKinds,
+  verifierJobKindsShortLabel,
+} from '../../lib/verifierJobKinds';
 
 interface VerifierRecord extends FirestoreUserDoc {
   uid: string;
@@ -89,6 +93,7 @@ function verifierFormFromUser(doc: FirestoreUserDoc): VerifierFormValues {
     email: doc.email || '',
     password: '',
     ovInName: isVerifierOvInName(doc.ovInName) ? doc.ovInName : '',
+    allowedJobKinds: normalizeVerifierJobKinds(doc.allowedJobKinds),
     ...verifierLocationFromUser(doc),
   };
 }
@@ -106,6 +111,8 @@ function validateVerifierForm(values: VerifierFormValues, mode: 'create' | 'edit
   if (mode === 'edit' && values.password.trim() && values.password.trim().length < 6) {
     return 'Password must be at least 6 characters.';
   }
+  const jobsError = validateVerifierJobKinds(values.allowedJobKinds);
+  if (jobsError) return jobsError;
   const ovNameError = validateVerifierOvInName(values.ovInName);
   if (ovNameError) return ovNameError;
   return validateVerifierLocation(values);
@@ -220,7 +227,6 @@ export const VerifierManagement: React.FC = () => {
     setError('');
     const validationError = validateVerifierForm(formValues, 'create');
     if (validationError) {
-      if (validationError === VERIFIER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       setError(validationError);
       return;
     }
@@ -243,6 +249,7 @@ export const VerifierManagement: React.FC = () => {
         phone: normalizePhone(formValues.phone),
         email: formValues.email.trim(),
         ovInName: formValues.ovInName === 'rc' ? 'rc' : 'verifier',
+        allowedJobKinds: normalizeVerifierJobKinds(formValues.allowedJobKinds),
         ...verifierLocationPersistFields(formValues),
         clearTextPassword: formValues.password,
         createdAt,
@@ -274,7 +281,6 @@ export const VerifierManagement: React.FC = () => {
   const handleSaveEdit = async (uid: string) => {
     const validationError = validateVerifierForm(formValues, 'edit');
     if (validationError) {
-      if (validationError === VERIFIER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       setError(validationError);
       return;
     }
@@ -290,6 +296,7 @@ export const VerifierManagement: React.FC = () => {
         phone: normalizePhone(formValues.phone),
         email: formValues.email.trim(),
         ovInName: formValues.ovInName === 'rc' ? 'rc' : 'verifier',
+        allowedJobKinds: normalizeVerifierJobKinds(formValues.allowedJobKinds),
         ...verifierLocationPersistFields(formValues),
         ...photoFields,
       };
@@ -529,6 +536,11 @@ export const VerifierManagement: React.FC = () => {
                               tone={active ? 'active' : 'inactive'}
                               label={verifierActiveLabel(record.active)}
                               icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
+                            />
+                            <RcListStatusBadge
+                              tone="info"
+                              label={verifierJobKindsShortLabel(record.allowedJobKinds)}
+                              icon={<ClipboardList size={12} strokeWidth={2.75} aria-hidden />}
                             />
                           </span>
                         </span>

@@ -1,3 +1,5 @@
+import { normalizeVerifierJobKinds } from './verifierJobKinds.ts';
+
 export type VerificationJobKind = 'ov_self' | 'ov_customer' | 'rv_customer';
 
 export const ALL_VERIFICATION_JOB_KINDS: VerificationJobKind[] = [
@@ -6,7 +8,14 @@ export const ALL_VERIFICATION_JOB_KINDS: VerificationJobKind[] = [
   'rv_customer',
 ];
 
-/** Verifier may start OV Self only. RC admin / VCT get all three kinds. */
-export function verificationJobKindsForActor(verifierMode: boolean): VerificationJobKind[] {
-  return verifierMode ? ['ov_self'] : ALL_VERIFICATION_JOB_KINDS;
+/**
+ * RC / VCT: all kinds.
+ * Verifier: RC-granted `allowedJobKinds` (default OV Self only).
+ */
+export function verificationJobKindsForActor(
+  verifierMode: boolean,
+  allowedJobKinds?: unknown,
+): VerificationJobKind[] {
+  if (!verifierMode) return [...ALL_VERIFICATION_JOB_KINDS];
+  return normalizeVerifierJobKinds(allowedJobKinds);
 }
