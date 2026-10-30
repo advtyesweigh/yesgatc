@@ -10,7 +10,13 @@ import {
   type RcQuotaSeats,
   type YesoneReservedAssignment,
 } from '../lib/rcMasterQuota';
-import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc, type YesoneSerialAllotment } from '../lib/yesoneInboundData';
+import {
+  expandSerialRange,
+  isUnusedYesoneAllotmentStatus,
+  uniqueSerials,
+  yesoneSerialFromDoc,
+  type YesoneSerialAllotment,
+} from '../lib/yesoneInboundData';
 import {
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
@@ -62,10 +68,11 @@ export function useRcQuotaSeats(
   const [batchLoaded, setBatchLoaded] = useState(!rcUid);
 
   useEffect(() => {
-    if (!rcUid || isRcAdmin) {
+    if (!rcUid) {
       setRcWideRecords(null);
       return;
     }
+    // Live RC-wide OVs — stamped serials must leave Balance/chips immediately.
     return onSnapshot(
       query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid)),
       snap => {
@@ -75,7 +82,7 @@ export function useRcQuotaSeats(
       },
       () => setRcWideRecords(null),
     );
-  }, [isRcAdmin, rcUid]);
+  }, [rcUid]);
 
   useEffect(() => {
     if (!rcUid) {
@@ -126,9 +133,15 @@ export function useRcQuotaSeats(
       query(collection(db, 'serialAllotments'), where('rcId', '==', rcUid)),
       snap => {
         const rows = snap.docs.map(item => yesoneSerialFromDoc(item.id, item.data()));
-        const active = rows.filter(row => row.status !== 'cancelled' && row.status !== 'replaced');
+        const active = rows.filter(
+          row => row.status !== 'cancelled' && row.status !== 'replaced',
+        );
         setAllotmentRows(active);
-        setAllotSerials(uniqueSerials(active.map(row => row.serialNumber)));
+        setAllotSerials(
+          uniqueSerials(
+            active.filter(row => isUnusedYesoneAllotmentStatus(row.status)).map(row => row.serialNumber),
+          ),
+        );
         setAllotLoaded(true);
       },
       () => {
@@ -225,6 +238,15 @@ export function useRcQuotaSeats(
 
   const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
   const pasSerials = usePasBlockedSerials(allotmentRows, products);
+  const allotmentUsedSerials = useMemo(
+    () =>
+      uniqueSerials(
+        allotmentRows
+          .filter(row => row.status.trim().toLowerCase() === 'used')
+          .map(row => row.serialNumber),
+      ),
+    [allotmentRows],
+  );
 
   const seats = useMemo(
     () =>
@@ -233,19 +255,21 @@ export function useRcQuotaSeats(
         companyName,
         ovQuota,
         ovQuotaUsed,
-        recordsAreRcWide: isRcAdmin || rcWideRecords != null,
+        recordsAreRcWide: rcWideRecords != null || isRcAdmin,
         storedSerials,
         allotSerials,
         voidedSerials,
-        records: isRcAdmin || !rcWideRecords ? records : rcWideRecords,
+        records: rcWideRecords ?? records,
         reservedSerials: mergedReserved,
         reservedForUids,
         reservedByUid,
         pasProductIds,
         pasSerials,
+        allotmentUsedSerials,
       }),
     [
       allotSerials,
+      allotmentUsedSerials,
       companyName,
       isRcAdmin,
       mergedReserved,

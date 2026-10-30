@@ -10,6 +10,7 @@ import {
 } from '../lib/rcMasterQuota';
 import {
   expandSerialRange,
+  isUnusedYesoneAllotmentStatus,
   uniqueSerials,
   yesoneSerialFromDoc,
   type YesoneSerialAllotment,
@@ -67,12 +68,8 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   }, [rcWideOk, records]);
 
   useEffect(() => {
-    // RC admin already has RC-wide records from parent — skip duplicate live download.
-    if (isRcAdmin) {
-      setRcWideOk(true);
-      return;
-    }
     setRcWideOk(false);
+    // Live RC-wide OVs so Balance never lists already-stamped stickers.
     return onSnapshot(
       query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid)),
       snap => {
@@ -86,7 +83,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
         /* keep list-scoped records if RC-wide read denied */
       },
     );
-  }, [isRcAdmin, rcUid]);
+  }, [rcUid]);
 
   useEffect(() => {
     return onSnapshot(doc(db, 'users', rcUid), snap => {
@@ -117,9 +114,15 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
       query(collection(db, 'serialAllotments'), where('rcId', '==', rcUid)),
       snap => {
         const rows = snap.docs.map(item => yesoneSerialFromDoc(item.id, item.data()));
-        const active = rows.filter(row => row.status !== 'cancelled' && row.status !== 'replaced');
+        const active = rows.filter(
+          row => row.status !== 'cancelled' && row.status !== 'replaced',
+        );
         setAllotmentRows(active);
-        setAllotSerials(uniqueSerials(active.map(row => row.serialNumber)));
+        setAllotSerials(
+          uniqueSerials(
+            active.filter(row => isUnusedYesoneAllotmentStatus(row.status)).map(row => row.serialNumber),
+          ),
+        );
       },
       () => {
         setAllotmentRows([]);
@@ -157,6 +160,15 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
 
   const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
   const pasSerials = usePasBlockedSerials(allotmentRows, products);
+  const allotmentUsedSerials = useMemo(
+    () =>
+      uniqueSerials(
+        allotmentRows
+          .filter(row => row.status.trim().toLowerCase() === 'used')
+          .map(row => row.serialNumber),
+      ),
+    [allotmentRows],
+  );
 
   const quota = useMemo(
     () =>
@@ -174,9 +186,11 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
         reservedForUids,
         pasProductIds,
         pasSerials,
+        allotmentUsedSerials,
       }),
     [
       allotSerials,
+      allotmentUsedSerials,
       companyName,
       isRcAdmin,
       mergedReserved,

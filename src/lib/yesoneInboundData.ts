@@ -40,6 +40,20 @@ export function looksLikeYesoneSerial(value: unknown): boolean {
   return Boolean(serial) && /[A-Za-z]/.test(serial);
 }
 
+/** Compact key so "G 0585" / "G-0585" match allotted "G0585". */
+export function compactYesoneSerialKey(value: unknown): string {
+  return text(value).toLowerCase().replace(/[\s\-_.]/g, '');
+}
+
+/**
+ * Seat still free for OV / Balance chips.
+ * Issued certs mark allotment `used` — must not reappear for stamp.
+ */
+export function isUnusedYesoneAllotmentStatus(status: unknown): boolean {
+  const key = text(status).toLowerCase();
+  return key !== 'cancelled' && key !== 'replaced' && key !== 'used';
+}
+
 export function yesoneSerialFromDoc(id: string, data: unknown): YesoneSerialAllotment {
   const row = asRecord(data);
   return {
@@ -131,8 +145,24 @@ export function parseQuotaInput(raw: string): number | null {
 }
 
 export function unusedSerials(allotted: string[], used: unknown): string[] {
-  const usedKeys = new Set(uniqueSerials(used).map(serial => serial.toLowerCase()));
-  return uniqueSerials(allotted).filter(serial => !usedKeys.has(serial.toLowerCase()));
+  const usedKeys = new Set(uniqueSerials(used).map(compactYesoneSerialKey).filter(Boolean));
+  // Also accept raw used strings that uniqueSerials might drop (edge formats).
+  const pushRaw = (value: unknown) => {
+    if (Array.isArray(value)) {
+      for (const item of value) pushRaw(item);
+      return;
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const key = compactYesoneSerialKey(value);
+      if (key) usedKeys.add(key);
+      return;
+    }
+    const row = asRecord(value);
+    const key = compactYesoneSerialKey(text(row.serialNumber) || text(row.serial));
+    if (key) usedKeys.add(key);
+  };
+  pushRaw(used);
+  return uniqueSerials(allotted).filter(serial => !usedKeys.has(compactYesoneSerialKey(serial)));
 }
 
 export type YesonePlainLogRow = {

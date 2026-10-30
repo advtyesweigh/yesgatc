@@ -121,6 +121,7 @@ export function RcQuotaPanel() {
   const { products } = useAppContext();
   const [quotas, setQuotas] = useState<QuotaRow[]>([]);
   const [serialsByRc, setSerialsByRc] = useState<Map<string, string[]>>(new Map());
+  const [allotUsedByRc, setAllotUsedByRc] = useState<Map<string, string[]>>(new Map());
   const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [usedByRc, setUsedByRc] = useState<Map<string, { count: number; serials: string[] }>>(
     new Map(),
@@ -216,13 +217,21 @@ export function RcQuotaPanel() {
       collection(db, 'serialAllotments'),
       snap => {
         const byKey = new Map<string, string[]>();
+        const usedByKey = new Map<string, string[]>();
         const active: YesoneSerialAllotment[] = [];
         for (const item of snap.docs) {
           const row = yesoneSerialFromDoc(item.id, item.data());
           if (row.status === 'cancelled' || row.status === 'replaced') continue;
           active.push(row);
           const keys = [row.rcId, row.rcCode.toUpperCase()].filter(Boolean);
+          const used = row.status.trim().toLowerCase() === 'used';
           for (const key of keys) {
+            if (used) {
+              const list = usedByKey.get(key) || [];
+              list.push(row.serialNumber);
+              usedByKey.set(key, list);
+              continue;
+            }
             const list = byKey.get(key) || [];
             list.push(row.serialNumber);
             byKey.set(key, list);
@@ -230,10 +239,12 @@ export function RcQuotaPanel() {
         }
         setAllotmentRows(active);
         setSerialsByRc(byKey);
+        setAllotUsedByRc(usedByKey);
       },
       () => {
         setAllotmentRows([]);
         setSerialsByRc(new Map());
+        setAllotUsedByRc(new Map());
       },
     );
 
@@ -296,14 +307,17 @@ export function RcQuotaPanel() {
         ? uniqueSerials([...fromStore.filter(serial => !isMasterPoolSerial(serial)), ...masterRcPoolSerials()])
         : fromStore.filter(serial => !isMasterPoolSerial(serial));
       const liveUsed = usedByRc.get(row.uid);
+      const allotUsed = uniqueSerials([
+        ...(allotUsedByRc.get(row.uid) || []),
+        ...(code ? allotUsedByRc.get(code) || [] : []),
+      ]);
       const storedUsed = parseQuotaInput(row.ovQuotaUsed);
       const ovUsed = liveUsed || {
         count: storedUsed ?? 0,
         serials: [] as string[],
       };
-      const remaining = liveUsed
-        ? remainingQuotaSerials(allotted, liveUsed.serials, row.voidedSerials)
-        : remainingQuotaSerials(allotted, [], row.voidedSerials);
+      const usedSerials = uniqueSerials([...(liveUsed?.serials || []), ...allotUsed]);
+      const remaining = remainingQuotaSerials(allotted, usedSerials, row.voidedSerials);
       return {
         ...row,
         allotted,
@@ -313,7 +327,7 @@ export function RcQuotaPanel() {
         serials: remaining,
       };
     });
-  }, [pasSerials, quotas, serialsByRc, usedByRc]);
+  }, [allotUsedByRc, pasSerials, quotas, serialsByRc, usedByRc]);
 
   const openRow = useMemo(
     () => rows.find(row => row.uid === openUid) ?? null,

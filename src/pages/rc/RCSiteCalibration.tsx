@@ -503,6 +503,7 @@ export const RCSiteCalibration: React.FC = () => {
       allowInterweighingDirect: isVerifier,
       directRemaining: isVerifier ? directSeats.unused : [],
       remainingAllotments: quotaSeats.allotmentRows
+        .filter(row => row.status.trim().toLowerCase() !== 'used')
         .filter(row => !allotmentUsesPasProduct(row, products.filter(productUsesPasSerials)))
         .map(row => ({
           serialNumber: row.serialNumber,

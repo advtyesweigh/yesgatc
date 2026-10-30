@@ -170,6 +170,11 @@ export function computeRcQuotaSeats(input: {
   pasProductIds?: Iterable<string>;
   /** PAS / misfiled bank serials — drop from GAS allotted + remaining. */
   pasSerials?: Iterable<string>;
+  /**
+   * `serialAllotments` with status `used` (issued cert). Always drop from remaining
+   * even when a matching siteCalibration row is missing / filtered.
+   */
+  allotmentUsedSerials?: string[];
 }): RcQuotaSeats {
   const master = isMasterRc({ rcCode: input.rcCode, companyName: input.companyName });
   const fromStore = excludePasQuotaSerials(
@@ -186,16 +191,20 @@ export function computeRcQuotaSeats(input: {
     ...(master ? { fromDate: IWP_USED_FROM_DATE } : {}),
     pasProductIds: input.pasProductIds,
   });
-  const remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
+  const usedSerials = uniqueSerials([
+    ...used.serials,
+    ...(input.allotmentUsedSerials || []),
+  ]);
+  const remaining = remainingQuotaSerials(allottedSerials, usedSerials, input.voidedSerials);
   const reservedSerials = unusedSerials(
     uniqueSerials(input.reservedSerials || []),
-    [...used.serials, ...input.voidedSerials],
+    [...usedSerials, ...input.voidedSerials],
   );
   const vctRemaining = excludeReservedSerials(remaining, reservedSerials);
   const reservedForUids = uniqueSerials(input.reservedForUids || []);
   const reservedByUid: Record<string, string[]> = {};
   for (const [uid, serials] of Object.entries(input.reservedByUid || {})) {
-    const kept = unusedSerials(uniqueSerials(serials), [...used.serials, ...input.voidedSerials]);
+    const kept = unusedSerials(uniqueSerials(serials), [...usedSerials, ...input.voidedSerials]);
     if (kept.length > 0) reservedByUid[uid] = kept;
   }
   const allottedQty = master ? masterRcUnusedQty() : parseQuotaInput(input.ovQuota);
@@ -219,6 +228,6 @@ export function computeRcQuotaSeats(input: {
     allottedQty,
     usedQty,
     balanceQty,
-    usedSerials: excludePasQuotaSerials(used.serials, input.pasSerials),
+    usedSerials: excludePasQuotaSerials(usedSerials, input.pasSerials),
   };
 }
