@@ -184,13 +184,19 @@ function getBestCurrentPosition(timeoutMs = 14_000): Promise<GeoPosition | null>
 
     const geoOpts: PositionOptions = {
       enableHighAccuracy: true,
-      maximumAge: 0,
+      // A zero maximumAge waits for a new satellite fix and times out indoors.
+      maximumAge: 60_000,
       timeout: timeoutMs,
     };
 
     watchId = navigator.geolocation.watchPosition(consider, () => {}, geoOpts);
 
     navigator.geolocation.getCurrentPosition(consider, () => {}, geoOpts);
+    navigator.geolocation.getCurrentPosition(consider, () => {}, {
+      enableHighAccuracy: false,
+      maximumAge: 2 * 60 * 1000,
+      timeout: 8_000,
+    });
   });
 }
 

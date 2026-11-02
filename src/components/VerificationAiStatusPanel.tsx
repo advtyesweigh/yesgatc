@@ -4,6 +4,11 @@ import type { VerificationAiStatusItem } from '../lib/verificationAiStatus';
 
 type VerificationAiStatusPanelProps = {
   items: VerificationAiStatusItem[];
+  gpsCapture?: {
+    onCapture: () => void;
+    busy: boolean;
+    error?: string;
+  };
 };
 
 function AiShieldIcon() {
@@ -23,7 +28,10 @@ function AiShieldIcon() {
   );
 }
 
-export const VerificationAiStatusPanel: React.FC<VerificationAiStatusPanelProps> = ({ items }) => (
+export const VerificationAiStatusPanel: React.FC<VerificationAiStatusPanelProps> = ({
+  items,
+  gpsCapture,
+}) => (
   <section className="verification-ai-status" aria-labelledby="verification-ai-status-title">
     <header className="verification-ai-status-head">
       <AiShieldIcon />
@@ -46,9 +54,25 @@ export const VerificationAiStatusPanel: React.FC<VerificationAiStatusPanelProps>
             aria-hidden
           />
           <span className="verification-ai-status-row-label">{item.label}</span>
-          <span className="verification-ai-status-row-value">{item.statusLabel}</span>
+          {item.id === 'gps-location' && !item.success && gpsCapture ? (
+            <button
+              type="button"
+              className="verification-ai-status-capture"
+              onClick={gpsCapture.onCapture}
+              disabled={gpsCapture.busy}
+            >
+              {gpsCapture.busy ? 'Locating…' : 'Capture'}
+            </button>
+          ) : (
+            <span className="verification-ai-status-row-value">{item.statusLabel}</span>
+          )}
         </li>
       ))}
     </ul>
+    {gpsCapture?.error ? (
+      <p className="verification-ai-status-error" role="alert">
+        {gpsCapture.error}
+      </p>
+    ) : null}
   </section>
 );

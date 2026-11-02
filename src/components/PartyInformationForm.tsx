@@ -23,6 +23,7 @@ import {
 } from '../lib/contactFields';
 import { filterCustomersForLookup, formatPhoneDisplay } from '../lib/customerLookup';
 import { customerFormMapsUrl, type CustomerFormValues } from '../lib/customerProfileFields';
+import { captureDeviceLocation, formatGeolocationError } from '../lib/captureDeviceLocation';
 import { lookupPincode } from '../lib/pincodeLookup';
 import type { Customer } from '../types';
 
@@ -373,25 +374,15 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
 
   const handleDetectLocation = () => {
     setLocationError('');
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported in this browser.');
-      return;
-    }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        onChange({
-          latitude: pos.coords.latitude.toFixed(6),
-          longitude: pos.coords.longitude.toFixed(6),
-        });
-        setLocating(false);
-      },
-      err => {
-        setLocating(false);
-        setLocationError(err.message || 'Could not detect location.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
+    void captureDeviceLocation()
+      .then(fix => {
+        onChange({ latitude: fix.latitude, longitude: fix.longitude });
+      })
+      .catch(err => {
+        setLocationError(formatGeolocationError(err));
+      })
+      .finally(() => setLocating(false));
   };
 
   const handleClearLocation = () => {

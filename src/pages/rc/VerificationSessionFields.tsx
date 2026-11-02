@@ -22,8 +22,10 @@ import type { AssignableVctOption } from '../../lib/verificationRequest';
 import {
   customerFormFromRecord,
   isPendingNewCustomerParty,
+  mergeCustomerPartyForm,
   parseCustomerLocation,
 } from '../../lib/customerProfileFields';
+import { captureDeviceLocation, formatGeolocationError } from '../../lib/captureDeviceLocation';
 import {
   CUSTOMER_GPS_REQUIRED_MESSAGE,
   allowsLiveGpsPhotoStamp,
@@ -224,6 +226,8 @@ export const VerificationSessionFields = forwardRef<
   const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [rcPartyForm, setRcPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
+  const [gpsCapturing, setGpsCapturing] = useState(false);
+  const [gpsCaptureError, setGpsCaptureError] = useState('');
 
   const stepContext = useMemo<VerificationFormStepContext>(
     () => ({
@@ -760,20 +764,7 @@ export const VerificationSessionFields = forwardRef<
     }
     const customer = customers.find(c => c.id === values.customerId);
     if (!customer) return;
-    setCustomerPartyForm(prev => {
-      const next = customerFormFromRecord(customer);
-      if (
-        prev.name === next.name
-        && prev.phone === next.phone
-        && prev.pincode === next.pincode
-        && prev.address === next.address
-        && prev.district === next.district
-        && prev.state === next.state
-      ) {
-        return prev;
-      }
-      return next;
-    });
+    setCustomerPartyForm(prev => mergeCustomerPartyForm(prev, customerFormFromRecord(customer)));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed party form; avoid onChange identity loops
   }, [
     isSelf,
@@ -793,7 +784,13 @@ export const VerificationSessionFields = forwardRef<
     if (lastRcPartySeedRef.current === seedKey) return;
     lastRcPartySeedRef.current = seedKey;
     lastRcPincodeLookupRef.current = '';
-    setRcPartyForm(rcProfileToFormValues(rcProfile));
+    setRcPartyForm(prev => {
+      const next = rcProfileToFormValues(rcProfile);
+      if (!next.latitude.trim() && prev.latitude.trim() && prev.longitude.trim()) {
+        return { ...next, latitude: prev.latitude, longitude: prev.longitude };
+      }
+      return next;
+    });
   }, [isSelf, rcUid, rcProfile]);
 
   useEffect(() => {
@@ -852,6 +849,21 @@ export const VerificationSessionFields = forwardRef<
       return next;
     });
   }, [onChange]);
+
+  const handleCaptureGps = useCallback(() => {
+    if (readOnly || gpsCapturing) return;
+    setGpsCaptureError('');
+    setGpsCapturing(true);
+    const apply = isSelf ? handleRcPartyChange : handleCustomerPartyChange;
+    void captureDeviceLocation()
+      .then(fix => {
+        apply({ latitude: fix.latitude, longitude: fix.longitude });
+      })
+      .catch(err => {
+        setGpsCaptureError(formatGeolocationError(err));
+      })
+      .finally(() => setGpsCapturing(false));
+  }, [readOnly, gpsCapturing, isSelf, handleRcPartyChange, handleCustomerPartyChange]);
 
   const applyCustomerSubject = () => {
     if (lockCustomer) return;
@@ -1545,7 +1557,18 @@ export const VerificationSessionFields = forwardRef<
                   idPrefix="ov-compact-review"
                 />
               )}
-              <VerificationAiStatusPanel items={submitAiStatusItems} />
+              <VerificationAiStatusPanel
+                items={submitAiStatusItems}
+                gpsCapture={
+                  readOnly || hasGpsLocation
+                    ? undefined
+                    : {
+                        onCapture: handleCaptureGps,
+                        busy: gpsCapturing,
+                        error: gpsCaptureError,
+                      }
+                }
+              />
               <VerificationResultSummary
                 instrumentLabel={submitInstrumentLabel}
                 tests={submitTestSummary}

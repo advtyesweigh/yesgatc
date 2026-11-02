@@ -194,6 +194,36 @@ export function customerFormFromRecord(record: Customer): CustomerFormValues {
   };
 }
 
+/**
+ * Re-seed the party form from a customer snapshot without dropping a GPS fix
+ * the phone just captured and the saved record does not have yet.
+ */
+export function mergeCustomerPartyForm(
+  prev: CustomerFormValues,
+  next: CustomerFormValues,
+): CustomerFormValues {
+  const sameParty =
+    prev.name === next.name
+    && prev.phone === next.phone
+    && prev.pincode === next.pincode
+    && prev.address === next.address
+    && prev.district === next.district
+    && prev.state === next.state;
+  if (sameParty) return prev;
+
+  const sameIdentity = prev.name === next.name && prev.phone === next.phone;
+  if (
+    sameIdentity
+    && !next.latitude.trim()
+    && !next.longitude.trim()
+    && prev.latitude.trim()
+    && prev.longitude.trim()
+  ) {
+    return { ...next, latitude: prev.latitude, longitude: prev.longitude };
+  }
+  return next;
+}
+
 export function formatCustomerLocation(record: Customer): string {
   if (!record.location) return '—';
   return `${record.location.lat.toFixed(5)}, ${record.location.lng.toFixed(5)}`;

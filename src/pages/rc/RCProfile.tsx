@@ -20,6 +20,7 @@ import {
 } from '../../lib/rcProfileFields';
 import { deleteRcStorageFile, uploadRcStandardWeightsCert } from '../../lib/rcCertificateUpload';
 import { parseGoogleMapsCoordinates } from '../../lib/googleMapsCoordinates';
+import { captureDeviceLocation, formatGeolocationError } from '../../lib/captureDeviceLocation';
 import { uploadVctProfilePhoto } from '../../lib/vctDocumentUpload';
 import { UploadField } from '../admin/productFormUi';
 import {
@@ -231,25 +232,15 @@ export const RCProfile: React.FC = () => {
 
   const handleDetectLocation = () => {
     setLocationError('');
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported in this browser.');
-      return;
-    }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setDraftCoords({
-          latitude: pos.coords.latitude.toFixed(6),
-          longitude: pos.coords.longitude.toFixed(6),
-        });
-        setLocating(false);
-      },
-      err => {
-        setLocating(false);
-        setLocationError(err.message || 'Could not detect location.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
+    void captureDeviceLocation()
+      .then(fix => {
+        setDraftCoords({ latitude: fix.latitude, longitude: fix.longitude });
+      })
+      .catch(err => {
+        setLocationError(formatGeolocationError(err));
+      })
+      .finally(() => setLocating(false));
   };
 
   const handleClearLocation = () => {

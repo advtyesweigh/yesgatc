@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { vctProfilePhotoFromUser } from '../../lib/vctProfileFields';
 import { verifierOwnGpsWrite } from '../../lib/verifierProfileFields';
+import { captureDeviceLocation, formatGeolocationError } from '../../lib/captureDeviceLocation';
 import { StorageImage } from '../../components/StorageImage';
 import { CreditCard, LogOut, Mail, MapPin, Phone, RefreshCw, User, UserCircle } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
@@ -64,36 +65,25 @@ export const VerifierProfile: React.FC = () => {
   const handleCaptureGps = () => {
     if (!user?.uid) return;
     setGpsError('');
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported in this browser.');
-      return;
-    }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const payload = verifierOwnGpsWrite(pos.coords.latitude, pos.coords.longitude);
+    void captureDeviceLocation()
+      .then(async fix => {
+        const payload = verifierOwnGpsWrite(Number(fix.latitude), Number(fix.longitude));
         if (!payload) {
-          setLocating(false);
           setGpsError('Could not read GPS coordinates.');
           return;
         }
-        void (async () => {
-          try {
-            await updateDoc(doc(db, 'users', user.uid), payload);
-            setProfile(prev => (prev ? { ...prev, location: payload.location } : prev));
-          } catch {
-            setGpsError('Could not save GPS.');
-          } finally {
-            setLocating(false);
-          }
-        })();
-      },
-      err => {
-        setLocating(false);
-        setGpsError(err.message || 'Could not detect location.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
+        try {
+          await updateDoc(doc(db, 'users', user.uid), payload);
+          setProfile(prev => (prev ? { ...prev, location: payload.location } : prev));
+        } catch {
+          setGpsError('Could not save GPS.');
+        }
+      })
+      .catch(err => {
+        setGpsError(formatGeolocationError(err));
+      })
+      .finally(() => setLocating(false));
   };
 
   if (loading) {
