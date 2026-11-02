@@ -211,10 +211,8 @@ export function mergeCustomerPartyForm(
     && prev.state === next.state;
   if (sameParty) return prev;
 
-  const sameIdentity = prev.name === next.name && prev.phone === next.phone;
   if (
-    sameIdentity
-    && !next.latitude.trim()
+    !next.latitude.trim()
     && !next.longitude.trim()
     && prev.latitude.trim()
     && prev.longitude.trim()

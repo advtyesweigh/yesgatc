@@ -26,6 +26,7 @@ import {
   parseCustomerLocation,
 } from '../../lib/customerProfileFields';
 import { captureDeviceLocation, formatGeolocationError } from '../../lib/captureDeviceLocation';
+import { isMobileTouchDevice } from '../../lib/imageCapture';
 import {
   CUSTOMER_GPS_REQUIRED_MESSAGE,
   allowsLiveGpsPhotoStamp,
@@ -571,13 +572,46 @@ export const VerificationSessionFields = forwardRef<
     return { ambientTemperature: t || undefined, relativeHumidity: h || undefined };
   }, [values.ambientTemperature, values.relativeHumidity]);
 
-  const mandatoryFieldsComplete = useMemo(
-    () =>
-      validateVerificationForSubmit(values, deviceImages, deviceRvImages, {
-        customerForm: customerPartyForm,
-      }) === null,
-    [values, deviceImages, deviceRvImages, customerPartyForm],
-  );
+  const mandatoryBlockReason = useMemo(() => {
+    const reason = validateVerificationForSubmit(values, deviceImages, deviceRvImages, {
+      customerForm: customerPartyForm,
+      rcForm: rcPartyForm,
+      customerPincode: !isSelf && values.customerId
+        ? customers.find(customer => customer.id === values.customerId)?.pincode ?? null
+        : null,
+      rcPincode: rcPartyForm.pincode || rcProfile?.pincode || null,
+      performerPhotos,
+      ovQuota: values.verificationType === 'OV' ? ovQuota : undefined,
+      isNewJob: lockKind,
+      products,
+      isVerifier,
+      verifierPincode,
+    });
+    if (reason) return reason;
+    if (!readOnly && isOnReviewStep && !declarationAccepted) {
+      return 'Accept the declaration before submitting for certification.';
+    }
+    return null;
+  }, [
+    values,
+    deviceImages,
+    deviceRvImages,
+    customerPartyForm,
+    rcPartyForm,
+    isSelf,
+    customers,
+    rcProfile?.pincode,
+    performerPhotos,
+    ovQuota,
+    lockKind,
+    products,
+    isVerifier,
+    verifierPincode,
+    readOnly,
+    isOnReviewStep,
+    declarationAccepted,
+  ]);
+  const mandatoryFieldsComplete = mandatoryBlockReason === null;
 
   const submitSummaryDateTime = useMemo(() => formatVerificationSummaryDateTime(), [isOnReviewStep]);
   const submitTestSummary = useMemo(() => buildDefaultVerificationTestSummary('PASS'), [isOnReviewStep]);
@@ -850,20 +884,41 @@ export const VerificationSessionFields = forwardRef<
     });
   }, [onChange]);
 
-  const handleCaptureGps = useCallback(() => {
-    if (readOnly || gpsCapturing) return;
+  const gpsDeniedRef = useRef(false);
+  const gpsFlightRef = useRef(false);
+  const partyGpsApplyRef = useRef(handleCustomerPartyChange);
+  partyGpsApplyRef.current = isSelf ? handleRcPartyChange : handleCustomerPartyChange;
+
+  const runGpsCapture = useCallback((manual: boolean) => {
+    if (readOnly || gpsFlightRef.current) return;
+    if (!manual && gpsDeniedRef.current) return;
+    if (manual) gpsDeniedRef.current = false;
+    gpsFlightRef.current = true;
     setGpsCaptureError('');
     setGpsCapturing(true);
-    const apply = isSelf ? handleRcPartyChange : handleCustomerPartyChange;
     void captureDeviceLocation()
       .then(fix => {
-        apply({ latitude: fix.latitude, longitude: fix.longitude });
+        partyGpsApplyRef.current({ latitude: fix.latitude, longitude: fix.longitude });
       })
       .catch(err => {
-        setGpsCaptureError(formatGeolocationError(err));
+        const message = formatGeolocationError(err);
+        if (/Allow location|blocked/i.test(message)) gpsDeniedRef.current = true;
+        setGpsCaptureError(message);
       })
-      .finally(() => setGpsCapturing(false));
-  }, [readOnly, gpsCapturing, isSelf, handleRcPartyChange, handleCustomerPartyChange]);
+      .finally(() => {
+        gpsFlightRef.current = false;
+        setGpsCapturing(false);
+      });
+  }, [readOnly]);
+
+  const handleCaptureGps = useCallback(() => {
+    runGpsCapture(true);
+  }, [runGpsCapture]);
+
+  useEffect(() => {
+    if (readOnly || hasGpsLocation || !isMobileTouchDevice()) return;
+    runGpsCapture(false);
+  }, [readOnly, hasGpsLocation, isSelf, isOnReviewStep, runGpsCapture]);
 
   const applyCustomerSubject = () => {
     if (lockCustomer) return;
@@ -1559,6 +1614,7 @@ export const VerificationSessionFields = forwardRef<
               )}
               <VerificationAiStatusPanel
                 items={submitAiStatusItems}
+                mandatoryDetail={mandatoryFieldsComplete ? null : mandatoryBlockReason}
                 gpsCapture={
                   readOnly || hasGpsLocation
                     ? undefined

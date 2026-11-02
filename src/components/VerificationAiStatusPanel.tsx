@@ -4,6 +4,8 @@ import type { VerificationAiStatusItem } from '../lib/verificationAiStatus';
 
 type VerificationAiStatusPanelProps = {
   items: VerificationAiStatusItem[];
+  /** Why submit is still blocked when mandatory fields are incomplete. */
+  mandatoryDetail?: string | null;
   gpsCapture?: {
     onCapture: () => void;
     busy: boolean;
@@ -30,6 +32,7 @@ function AiShieldIcon() {
 
 export const VerificationAiStatusPanel: React.FC<VerificationAiStatusPanelProps> = ({
   items,
+  mandatoryDetail = null,
   gpsCapture,
 }) => (
   <section className="verification-ai-status" aria-labelledby="verification-ai-status-title">
@@ -69,6 +72,11 @@ export const VerificationAiStatusPanel: React.FC<VerificationAiStatusPanelProps>
         </li>
       ))}
     </ul>
+    {mandatoryDetail ? (
+      <p className="verification-ai-status-error" role="status">
+        {mandatoryDetail}
+      </p>
+    ) : null}
     {gpsCapture?.error ? (
       <p className="verification-ai-status-error" role="alert">
         {gpsCapture.error}
