@@ -7,17 +7,14 @@ import { callableErrorMessage } from '../../lib/zohoRvInvoice';
 import { syncYesoneOvUsed } from '../../lib/yesoneWebhookClient';
 import { useAuth } from '../../context/AuthContext';
 import {
-  IWP_USED_FROM_DATE,
+  computeRcQuotaSeats,
   isMasterPoolSerial,
   isMasterRc,
   masterRcPoolSerials,
-  masterRcUnusedQty,
   MZN_G_REALLOC_MOVES,
   applySerialReallotment,
   serialReallotmentPending,
   rehomeMasterPoolSerials,
-  remainingQuotaSerials,
-  rcOvUsedFromRecords,
   toggleVoidedSerial,
 } from '../../lib/rcMasterQuota';
 import {
@@ -28,7 +25,6 @@ import {
 } from '../../lib/yesoneInboundData';
 import { pasProductIdSet } from '../../lib/pasSerialBank';
 import { usePasBlockedSerials } from '../../hooks/usePasBlockedSerials';
-import { excludePasQuotaSerials } from '../../lib/rcQuotaMath';
 import { useAppContext } from '../../context/AppContext';
 import type { SiteCalibration } from '../../types';
 import { SerialSeatOverlay } from '../../components/SerialSeatOverlay';
@@ -43,15 +39,8 @@ type QuotaRow = {
   voidedSerials: string[];
 };
 
-function quotaBalanceValue(quota: string, used: string): number | null {
-  const q = parseQuotaInput(quota);
-  const u = parseQuotaInput(used);
-  if (q == null || u == null) return null;
-  return q - u;
-}
-
-function displayNum(value: string): string {
-  return value.trim() || '—';
+function displayQty(value: number | null): string {
+  return value == null ? '—' : String(value);
 }
 
 function sortQuotaRows(a: QuotaRow, b: QuotaRow): number {
@@ -123,9 +112,7 @@ export function RcQuotaPanel() {
   const [serialsByRc, setSerialsByRc] = useState<Map<string, string[]>>(new Map());
   const [allotUsedByRc, setAllotUsedByRc] = useState<Map<string, string[]>>(new Map());
   const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
-  const [usedByRc, setUsedByRc] = useState<Map<string, { count: number; serials: string[] }>>(
-    new Map(),
-  );
+  const [recordsByRc, setRecordsByRc] = useState<Map<string, SiteCalibration[]>>(new Map());
   const [error, setError] = useState('');
   const [openUid, setOpenUid] = useState('');
 
@@ -254,80 +241,73 @@ export function RcQuotaPanel() {
     };
   }, []);
 
-  // Load used serials only when seat overlay opens — not N live listeners for every RC.
+  // Load RC-wide OVs only when seat overlay opens — not N live listeners for every RC.
   useEffect(() => {
     if (!openUid) return;
     let cancelled = false;
     void getDocs(query(collection(db, 'siteCalibrations'), where('rcId', '==', openUid)))
       .then(snap => {
         if (cancelled) return;
-        setUsedByRc(prev => {
+        setRecordsByRc(prev => {
           const next = new Map(prev);
           next.set(
             openUid,
-            rcOvUsedFromRecords(
-              snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
-              {
-                ...(openUid === masterUid ? { fromDate: IWP_USED_FROM_DATE } : {}),
-                pasProductIds: pasProductIdSet(products),
-              },
-            ),
+            snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
           );
           return next;
         });
       })
       .catch(() => {
         if (cancelled) return;
-        setUsedByRc(prev => {
+        setRecordsByRc(prev => {
           const next = new Map(prev);
-          next.set(openUid, { count: 0, serials: [] });
+          next.set(openUid, []);
           return next;
         });
       });
     return () => {
       cancelled = true;
     };
-  }, [openUid, masterUid, products]);
+  }, [openUid]);
 
   const pasSerials = usePasBlockedSerials(allotmentRows, products);
+  const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
 
   const rows = useMemo(() => {
     return quotas.map(row => {
-      const master = isMasterRc(row);
       const code = row.rcCode.toUpperCase();
-      const fromStore = excludePasQuotaSerials(
-        uniqueSerials([
-          ...row.storedSerials,
-          ...(serialsByRc.get(row.uid) || []),
-          ...(code ? serialsByRc.get(code) || [] : []),
-        ]),
-        pasSerials,
-      );
-      const allotted = master
-        ? uniqueSerials([...fromStore.filter(serial => !isMasterPoolSerial(serial)), ...masterRcPoolSerials()])
-        : fromStore.filter(serial => !isMasterPoolSerial(serial));
-      const liveUsed = usedByRc.get(row.uid);
-      const allotUsed = uniqueSerials([
+      const allotSerials = uniqueSerials([
+        ...(serialsByRc.get(row.uid) || []),
+        ...(code ? serialsByRc.get(code) || [] : []),
+      ]);
+      const allotmentUsedSerials = uniqueSerials([
         ...(allotUsedByRc.get(row.uid) || []),
         ...(code ? allotUsedByRc.get(code) || [] : []),
       ]);
-      const storedUsed = parseQuotaInput(row.ovQuotaUsed);
-      const ovUsed = liveUsed || {
-        count: storedUsed ?? 0,
-        serials: [] as string[],
-      };
-      const usedSerials = uniqueSerials([...(liveUsed?.serials || []), ...allotUsed]);
-      const remaining = remainingQuotaSerials(allotted, usedSerials, row.voidedSerials);
+      const hasRcWide = recordsByRc.has(row.uid);
+      const seats = computeRcQuotaSeats({
+        rcCode: row.rcCode,
+        companyName: row.companyName,
+        ovQuota: row.ovQuota,
+        ovQuotaUsed: row.ovQuotaUsed,
+        recordsAreRcWide: hasRcWide,
+        storedSerials: row.storedSerials,
+        allotSerials,
+        voidedSerials: row.voidedSerials,
+        records: recordsByRc.get(row.uid) || [],
+        pasProductIds,
+        pasSerials,
+        allotmentUsedSerials,
+      });
       return {
         ...row,
-        allotted,
-        remaining,
-        sold: master ? String(masterRcUnusedQty()) : row.ovQuota,
-        used: String(ovUsed.count),
-        serials: remaining,
+        allottedQty: seats.allottedQty,
+        usedQty: seats.usedQty,
+        balanceQty: seats.balanceQty,
+        serials: seats.remaining,
       };
     });
-  }, [allotUsedByRc, pasSerials, quotas, serialsByRc, usedByRc]);
+  }, [allotUsedByRc, pasProductIds, pasSerials, quotas, recordsByRc, serialsByRc]);
 
   const openRow = useMemo(
     () => rows.find(row => row.uid === openUid) ?? null,
@@ -350,9 +330,10 @@ export function RcQuotaPanel() {
             </thead>
             <tbody>
               {rows.map(row => {
-                const balance = quotaBalanceValue(row.sold, row.used);
-                const seatBalance = row.serials.length;
-                const canOpen = row.allotted.length > 0 || seatBalance > 0 || row.voidedSerials.length > 0;
+                const canOpen =
+                  row.serials.length > 0
+                  || row.voidedSerials.length > 0
+                  || (row.allottedQty != null && row.allottedQty > 0);
                 return (
                   <tr key={row.uid}>
                     <td>
@@ -361,12 +342,12 @@ export function RcQuotaPanel() {
                     </td>
                     <td>
                       <span className="text-mono admin-setting-quota-balance">
-                        {displayNum(row.sold)}
+                        {displayQty(row.allottedQty)}
                       </span>
                     </td>
                     <td>
                       <span className="text-mono admin-setting-quota-balance">
-                        {displayNum(row.used)}
+                        {displayQty(row.usedQty)}
                       </span>
                     </td>
                     <td>
@@ -377,11 +358,11 @@ export function RcQuotaPanel() {
                           onClick={() => setOpenUid(row.uid)}
                           aria-label={`Serial numbers for ${row.companyName}`}
                         >
-                          {balance == null ? '—' : balance}
+                          {displayQty(row.balanceQty)}
                         </button>
                       ) : (
                         <span className="text-mono admin-setting-quota-balance">
-                          {balance == null ? '—' : balance}
+                          {displayQty(row.balanceQty)}
                         </span>
                       )}
                     </td>
@@ -399,7 +380,7 @@ export function RcQuotaPanel() {
           rcCode={openRow.rcCode}
           serials={uniqueSerials([...openRow.serials, ...openRow.voidedSerials])}
           voidedSerials={openRow.voidedSerials}
-          expectedCount={quotaBalanceValue(openRow.sold, openRow.used)}
+          expectedCount={openRow.balanceQty}
           canVoid
           onToggleVoid={(serial, voided) => toggleVoidedSerial(openRow.uid, serial, voided)}
           onClose={() => setOpenUid('')}

@@ -38,4 +38,25 @@ describe('used allotment exclusion from Balance / chips', () => {
     assert.deepEqual(seats.remaining, ['G0586', 'X00796']);
     assert.ok(seats.usedSerials.includes('G0585'));
   });
+
+  it('admin table: stale YesOne used=allotted does not wipe remaining seats', () => {
+    const used = Array.from({ length: 587 }, (_, i) => `X${String(i + 1).padStart(5, '0')}`);
+    const remaining = Array.from({ length: 157 }, (_, i) => `X${String(1000 + i).padStart(5, '0')}`);
+    const seats = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan',
+      ovQuota: '744',
+      ovQuotaUsed: '744',
+      recordsAreRcWide: false,
+      storedSerials: [...used, ...remaining],
+      allotSerials: remaining,
+      voidedSerials: [],
+      records: [] as SiteCalibration[],
+      allotmentUsedSerials: used,
+    });
+    assert.equal(seats.allottedQty, 744);
+    assert.equal(seats.remaining.length, 157);
+    assert.equal(seats.usedQty, 587);
+    assert.equal(seats.balanceQty, 157);
+  });
 });
