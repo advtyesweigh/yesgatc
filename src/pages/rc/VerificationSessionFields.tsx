@@ -90,6 +90,8 @@ import {
   type VerificationFormStepId,
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { isZohoRvInvoicingEnabled } from '../../lib/zohoRvSubmit';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import {
@@ -215,6 +217,7 @@ export const VerificationSessionFields = forwardRef<
   ref,
 ) {
   const { products } = useAppContext();
+  const { appSettings } = useAppSettings();
   const locked = submitting || readOnly;
 
   const [activeStep, setActiveStep] = useState(0);
@@ -580,6 +583,8 @@ export const VerificationSessionFields = forwardRef<
         ? customers.find(customer => customer.id === values.customerId)?.pincode ?? null
         : null,
       rcPincode: rcPartyForm.pincode || rcProfile?.pincode || null,
+      rcZohoId: rcProfile?.zohoId,
+      zohoRvInvoicingEnabled: isVerifier ? false : isZohoRvInvoicingEnabled(appSettings),
       performerPhotos,
       ovQuota: values.verificationType === 'OV' ? ovQuota : undefined,
       isNewJob: lockKind,
@@ -601,6 +606,8 @@ export const VerificationSessionFields = forwardRef<
     isSelf,
     customers,
     rcProfile?.pincode,
+    rcProfile?.zohoId,
+    appSettings,
     performerPhotos,
     ovQuota,
     lockKind,
