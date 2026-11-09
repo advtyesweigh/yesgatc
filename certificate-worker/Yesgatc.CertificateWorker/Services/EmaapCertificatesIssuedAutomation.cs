@@ -14,8 +14,9 @@ public sealed record EmaapCertificateDownloadResult(
 
 /// <summary>
 /// eMAAP Certificates Issued: dismiss success OK, open list, match Belongs to + Mobile.
-/// New submits often have empty Third Party Certificate No. until first Download (green).
-/// Then the number appears and Upload Signed PDF shows. Second Download opens the PDF tab.
+/// Pending rows (empty certificate number) show Generate Certificate. That click posts
+/// generate-third-party and the list refresh fills the number plus a PDF link.
+/// Signed rows show Download. Temp PDF rows show Download Certificate. Either opens the PDF.
 /// </summary>
 public static class EmaapCertificatesIssuedAutomation
 {
@@ -191,7 +192,7 @@ public static class EmaapCertificatesIssuedAutomation
         if (!await IsCertificatesIssuedPageAsync(page))
         {
             throw new InvalidOperationException(
-                "Could not open eMAAP Certificates Issued list (no Download/certificate table found). " +
+                "Could not open eMAAP Certificates Issued list (no Generate Certificate/Download table found). " +
                 $"Current URL: {page.Url}");
         }
 
@@ -254,9 +255,10 @@ public static class EmaapCertificatesIssuedAutomation
     {
         // Prefer operational markers over title text (title can be late/hidden in SPA).
         var hasDownload = await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Download" })
+            .Or(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Generate Certificate" }))
             .Or(page.Locator("button, a").Filter(new LocatorFilterOptions
             {
-                HasTextRegex = new Regex("^\\s*Download\\s*$", RegexOptions.IgnoreCase),
+                HasTextRegex = EmaapIssuedPdfAction.ActionLabelRegex,
             }))
             .CountAsync() > 0;
 
@@ -560,7 +562,7 @@ public static class EmaapCertificatesIssuedAutomation
                     if (numbered is null)
                     {
                         throw new InvalidOperationException(
-                            $"eMAAP Download did not assign a certificate number for {party.BelongToName} / {party.Mobile}.");
+                            $"eMAAP Generate Certificate did not assign a certificate number for {party.BelongToName} / {party.Mobile}.");
                     }
 
                     best = numbered;
@@ -776,7 +778,7 @@ public static class EmaapCertificatesIssuedAutomation
                 }
             }
 
-            // First Download generates PDF in background. Arm listeners only for the second click.
+            // Generate Certificate does not open a PDF. Arm listeners only for Download.
             if (!skipPrime)
             {
                 await PrimeIssuedPdfGenerationAsync(page, best, belongToName, cancellationToken);
@@ -789,7 +791,7 @@ public static class EmaapCertificatesIssuedAutomation
             if (!opened)
             {
                 throw new InvalidOperationException(
-                    $"Download button missing for certificate {best.CertificateNumber} after PDF generate.");
+                    $"Download button missing for certificate {best.CertificateNumber} after Generate Certificate.");
             }
 
             var deadline = DateTime.UtcNow.AddSeconds(120);
@@ -1131,9 +1133,9 @@ public static class EmaapCertificatesIssuedAutomation
     }
 
     /// <summary>
-    /// First Download click: eMAAP generates PDF in background and reveals Upload Signed PDF.
-    /// Pending rows have no cert number until this click. Wait 3s (then up to 15s more until
-    /// Upload Signed PDF appears on a numbered row). Skip if already generated.
+    /// Pending rows: click Generate Certificate (legacy rows: Download). eMAAP posts
+    /// generate-third-party and refreshes the list with a certificate number.
+    /// Skip when the row is already numbered — the PDF link is the next click.
     /// </summary>
     private static async Task PrimeIssuedPdfGenerationAsync(
         IPage page,
@@ -1156,7 +1158,7 @@ public static class EmaapCertificatesIssuedAutomation
             var label = string.IsNullOrWhiteSpace(best.BelongTo) ? belongToName : best.BelongTo;
             throw new InvalidOperationException(
                 pending
-                    ? $"Download button missing for pending {label} / {best.Mobile} row."
+                    ? $"Generate Certificate button missing for pending {label} / {best.Mobile} row."
                     : $"Download button missing for certificate {best.CertificateNumber}.");
         }
 
@@ -1547,15 +1549,18 @@ public static class EmaapCertificatesIssuedAutomation
                     || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
                 });
               };
-              const downloadLabel = (el) => (el.innerText || el.textContent
+              const actionLabel = (el) => (el.innerText || el.textContent
                 || el.getAttribute('title') || el.getAttribute('aria-label') || '')
                 .replace(/\s+/g, ' ').trim();
+              const isGenerate = (t) => /^generate\s+certificate$/i.test(t);
+              const isPdfDownload = (t) => /^download(\s+certificate)?$/i.test(t);
               const clickDownload = (tr) => {
-                const btn = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
-                  .find(el => /^download$/i.test(downloadLabel(el)));
-                if (!btn) return false;
-                btn.scrollIntoView({ block: 'center' });
-                btn.click();
+                const labeled = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                  .map(el => ({ el, t: actionLabel(el) }));
+                const hit = labeled.find(x => isPdfDownload(x.t)) || labeled.find(x => isGenerate(x.t));
+                if (!hit) return false;
+                hit.el.scrollIntoView({ block: 'center' });
+                hit.el.click();
                 return true;
               };
               const tbodyRows = Array.from(document.querySelectorAll('table.custom-table tbody tr, table tbody tr'));
@@ -1600,10 +1605,11 @@ public static class EmaapCertificatesIssuedAutomation
             {
                 var indexed = page.Locator("table.custom-table tbody tr, table tbody tr").Nth(best.RowIndex);
                 var indexedDl = indexed.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Download" })
+                    .Or(indexed.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Generate Certificate" }))
                     .Or(indexed.Locator("button, a")
                         .Filter(new LocatorFilterOptions
                         {
-                            HasTextRegex = new Regex("^\\s*Download\\s*$", RegexOptions.IgnoreCase),
+                            HasTextRegex = EmaapIssuedPdfAction.ActionLabelRegex,
                         }));
                 if (await indexedDl.CountAsync() > 0)
                 {
@@ -1657,10 +1663,11 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             var downloadBtn = row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Download" })
+                .Or(row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Generate Certificate" }))
                 .Or(row.Locator("button, a")
                     .Filter(new LocatorFilterOptions
                     {
-                        HasTextRegex = new Regex("^\\s*Download\\s*$", RegexOptions.IgnoreCase),
+                        HasTextRegex = EmaapIssuedPdfAction.ActionLabelRegex,
                     }));
             if (await downloadBtn.CountAsync() == 0)
             {
@@ -2058,12 +2065,15 @@ public static class EmaapCertificatesIssuedAutomation
                     });
                   }
                   if (!allowPending) continue;
-                  const hasDownload = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
-                    .some(el => /^download$/i.test(
-                      (el.innerText || el.textContent
-                        || el.getAttribute('title') || el.getAttribute('aria-label') || '')
-                        .replace(/\s+/g, ' ').trim()));
-                  if (!hasDownload) continue;
+                  const actionLabel = (el) => (el.innerText || el.textContent
+                    || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                    .replace(/\s+/g, ' ').trim();
+                  const hasAction = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                    .some(el => {
+                      const t = actionLabel(el);
+                      return /^generate\s+certificate$/i.test(t) || /^download(\s+certificate)?$/i.test(t);
+                    });
+                  if (!hasAction) continue;
                   return JSON.stringify({
                     index,
                     certificateNumber: '',
@@ -2168,7 +2178,7 @@ public static class EmaapCertificatesIssuedAutomation
                     .Where(static s => !string.IsNullOrWhiteSpace(s)));
         }
 
-        // Match Belongs+Mobile. Numbered certs use sequence; pending rows have no IND/GATC until first Download.
+        // Match Belongs+Mobile. Numbered certs use sequence; pending rows have no IND/GATC until Generate Certificate.
         var json = await page.EvaluateAsync<string>(
             """
             ([wantBelong, wantMobile, excludeCsv, minExclusiveSeq, includePending, wantSerial]) => {
@@ -2296,12 +2306,15 @@ public static class EmaapCertificatesIssuedAutomation
                   }
 
                   if (!allowPending) continue;
-                  const hasDownload = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
-                    .some(el => /^download$/i.test(
-                      (el.innerText || el.textContent
-                        || el.getAttribute('title') || el.getAttribute('aria-label') || '')
-                        .replace(/\s+/g, ' ').trim()));
-                  if (!hasDownload) continue;
+                  const actionLabel = (el) => (el.innerText || el.textContent
+                    || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                    .replace(/\s+/g, ' ').trim();
+                  const hasAction = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                    .some(el => {
+                      const t = actionLabel(el);
+                      return /^generate\s+certificate$/i.test(t) || /^download(\s+certificate)?$/i.test(t);
+                    });
+                  if (!hasAction) continue;
                   if (!bestPending || index < bestPending.index) {
                     bestPending = {
                       index,

@@ -1105,7 +1105,7 @@ public sealed class AutomationService : IAsyncDisposable
 
     /// <summary>
     /// Logged-in eMAAP: fill form → Submit Certificate Details → OK → Certificates Issued
-    /// (Download once to generate, wait 3s, Download again to open PDF) → mark certified in Firebase.
+    /// (Generate Certificate on a pending row, then Download / Download Certificate) → mark certified in Firebase.
     /// When <paramref name="fillOnly"/> is true: fill through Name of Principal Officer, then stop.
     /// </summary>
     public async Task<string> FillEmaapCertificateGenerationAsync(
