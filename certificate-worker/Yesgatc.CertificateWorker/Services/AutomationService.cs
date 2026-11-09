@@ -1460,25 +1460,39 @@ public sealed class AutomationService : IAsyncDisposable
                     $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
             }
 
-            if (EmaapCertificatePdfSerial.FileContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
+            if (!EmaapCertificatePdfSerial.FileContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
             {
-                break;
+                rejected.Add(download.CertificateNumber);
+                exclude.Add(download.CertificateNumber);
+                prefer = null;
+                TryDeleteDownload(download.LocalPdfPath);
+                download = null;
+                continue;
             }
 
-            // Party match picked another instrument's certificate. Do not bind it.
-            rejected.Add(download.CertificateNumber);
-            exclude.Add(download.CertificateNumber);
-            prefer = null;
-            try
+            var printedNumber = EmaapCertificatePdfSerial.FileCertificateNumber(download.LocalPdfPath);
+            if (string.IsNullOrWhiteSpace(printedNumber)
+                || !string.Equals(printedNumber, download.CertificateNumber, StringComparison.OrdinalIgnoreCase))
             {
-                File.Delete(download.LocalPdfPath);
-            }
-            catch
-            {
-                // Next attempt writes a different certificate file.
+                // Older certificate for the same serial. Do not store the row label over a different file.
+                rejected.Add(
+                    string.IsNullOrWhiteSpace(printedNumber)
+                        ? $"{download.CertificateNumber} (no number in PDF)"
+                        : $"{download.CertificateNumber} file says {printedNumber}");
+                exclude.Add(download.CertificateNumber);
+                if (!string.IsNullOrWhiteSpace(printedNumber))
+                {
+                    exclude.Add(printedNumber);
+                }
+
+                prefer = null;
+                TryDeleteDownload(download.LocalPdfPath);
+                download = null;
+                continue;
             }
 
-            download = null;
+            download = download with { CertificateNumber = printedNumber };
+            break;
         }
 
         if (download is null)
@@ -1541,6 +1555,21 @@ public sealed class AutomationService : IAsyncDisposable
         return
             $"eMAAP certified {party.BelongToName} · serial {instrument.SerialNumber} · " +
             $"{download.CertificateNumber}{photoNote} · PDF synced to Firebase.";
+    }
+
+    private static void TryDeleteDownload(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Next attempt writes a different certificate file.
+        }
     }
 
     private string[] SnapshotClaimedEmaapCerts()

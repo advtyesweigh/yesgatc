@@ -6,6 +6,22 @@ namespace Yesgatc.CertificateWorker.Tests;
 public sealed class EmaapCertificatePdfSerialTests
 {
     [Fact]
+    public void Reads_certificate_number_printed_in_the_pdf()
+    {
+        Assert.Equal(
+            "IND/GATC/KL/26/04/26/6241",
+            EmaapCertificatePdfSerial.TryReadCertificateNumber(
+                "Certificate No: IND/GATC/KL/26/04/26/6241 Date of Verification"));
+    }
+
+    [Fact]
+    public void Does_not_read_a_truncated_centre_code_as_the_certificate_number()
+    {
+        Assert.Null(EmaapCertificatePdfSerial.TryReadCertificateNumber(
+            "GOVERNMENT APPROVED TEST CENTRE(IND/GATC/KL/26/04)"));
+    }
+
+    [Fact]
     public void Matches_compact_serial_in_pdf_text()
     {
         Assert.True(EmaapCertificatePdfSerial.TextContainsSerial(
