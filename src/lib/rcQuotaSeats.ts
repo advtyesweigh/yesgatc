@@ -1,6 +1,7 @@
 import { expandSerialRange, parseQuotaInput, uniqueSerials, unusedSerials } from './yesoneInboundData.ts';
 import {
   excludePasQuotaSerials,
+  pasStickersAmong,
   recordUsesPasQuota,
   resolveRcQuotaUsedQty,
 } from './rcQuotaMath.ts';
@@ -37,6 +38,15 @@ export function isMasterRcCode(code: string): boolean {
 export function isMasterRc(row: { rcCode?: string; companyName?: string }): boolean {
   if (isMasterRcCode(row.rcCode || '')) return true;
   return (row.companyName || '').toUpperCase().includes('INTERWEIGHING');
+}
+
+const MEEZAN_RC_CODE = 'MZN';
+
+/** Meezan unused stickers (including former PAS) are one GAS bank for any scale. */
+export function isMeezanRc(row: { rcCode?: string; companyName?: string }): boolean {
+  const code = (row.rcCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3);
+  if (code === MEEZAN_RC_CODE) return true;
+  return (row.companyName || '').toUpperCase().includes('MEEZAN');
 }
 
 const masterPoolUpper = new Set<string>();
@@ -142,6 +152,8 @@ export type RcQuotaSeats = {
   balanceQty: number | null;
   /** Live GAS OV serials that consume quota (PAS jobs excluded). */
   usedSerials: string[];
+  /** Unused PAS stickers on this RC. Not part of GAS allotted / used / balance. */
+  pasRemaining: string[];
 };
 
 export function excludeReservedSerials(serials: string[], reserved: string[]): string[] {
@@ -177,10 +189,8 @@ export function computeRcQuotaSeats(input: {
   allotmentUsedSerials?: string[];
 }): RcQuotaSeats {
   const master = isMasterRc({ rcCode: input.rcCode, companyName: input.companyName });
-  const fromStore = excludePasQuotaSerials(
-    uniqueSerials([...input.storedSerials, ...input.allotSerials]),
-    input.pasSerials,
-  );
+  const rawBank = uniqueSerials([...input.storedSerials, ...input.allotSerials]);
+  const fromStore = excludePasQuotaSerials(rawBank, input.pasSerials);
   const allottedSerials = master
     ? uniqueSerials([
       ...fromStore.filter(serial => !isMasterPoolSerial(serial)),
@@ -195,11 +205,19 @@ export function computeRcQuotaSeats(input: {
     ...used.serials,
     ...(input.allotmentUsedSerials || []),
   ]);
-  const remaining = remainingQuotaSerials(allottedSerials, usedSerials, input.voidedSerials);
+  const gasRemaining = remainingQuotaSerials(allottedSerials, usedSerials, input.voidedSerials);
   const reservedSerials = unusedSerials(
     uniqueSerials(input.reservedSerials || []),
     [...usedSerials, ...input.voidedSerials],
   );
+  const recordSerials = input.records.map(record => String(record.serialNumber || '').trim());
+  const pasRemaining = unusedSerials(pasStickersAmong(rawBank, input.pasSerials), [
+    ...usedSerials,
+    ...input.voidedSerials,
+    ...recordSerials,
+  ]);
+  const meezan = isMeezanRc({ rcCode: input.rcCode, companyName: input.companyName });
+  const remaining = meezan ? uniqueSerials([...gasRemaining, ...pasRemaining]) : gasRemaining;
   const vctRemaining = excludeReservedSerials(remaining, reservedSerials);
   const reservedForUids = uniqueSerials(input.reservedForUids || []);
   const reservedByUid: Record<string, string[]> = {};
@@ -216,9 +234,13 @@ export function computeRcQuotaSeats(input: {
     storedUsed,
     recordsAreRcWide: Boolean(input.recordsAreRcWide),
     allottedQty,
-    remainingCount: remaining.length,
+    remainingCount: gasRemaining.length,
   });
-  const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
+  const balanceQty = meezan
+    ? remaining.length
+    : allottedQty == null
+      ? gasRemaining.length
+      : allottedQty - usedQty;
   return {
     remaining,
     vctRemaining,
@@ -229,5 +251,6 @@ export function computeRcQuotaSeats(input: {
     usedQty,
     balanceQty,
     usedSerials: excludePasQuotaSerials(usedSerials, input.pasSerials),
+    pasRemaining,
   };
 }

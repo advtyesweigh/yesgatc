@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   countReservedOverlaySeats,
   excludePasQuotaSerials,
+  pasStickersAmong,
   pickQuotaSerialsForActor,
   recordUsesPasQuota,
   resolveRcQuotaUsedQty,
@@ -86,6 +87,13 @@ describe('PAS exclusion', () => {
     assert.deepEqual(
       excludePasQuotaSerials(['X00423', 'G0541', 'YJ00245', 'Y10315'], blocked),
       ['X00423', 'G0541', 'Y10315'],
+    );
+  });
+
+  it('splits PAS stickers out of a mixed bank', () => {
+    assert.deepEqual(
+      pasStickersAmong(['G0001', 'YJ01001', 'X00301', 'AS00276'], ['AS00276']),
+      ['YJ01001', 'AS00276'],
     );
   });
 

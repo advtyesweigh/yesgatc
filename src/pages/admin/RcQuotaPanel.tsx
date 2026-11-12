@@ -305,6 +305,7 @@ export function RcQuotaPanel() {
         usedQty: seats.usedQty,
         balanceQty: seats.balanceQty,
         serials: seats.remaining,
+        pasSerials: seats.pasRemaining,
       };
     });
   }, [allotUsedByRc, pasProductIds, pasSerials, quotas, recordsByRc, serialsByRc]);
@@ -380,6 +381,7 @@ export function RcQuotaPanel() {
           rcCode={openRow.rcCode}
           serials={uniqueSerials([...openRow.serials, ...openRow.voidedSerials])}
           voidedSerials={openRow.voidedSerials}
+          pasSerials={openRow.pasSerials}
           expectedCount={openRow.balanceQty}
           canVoid
           onToggleVoid={(serial, voided) => toggleVoidedSerial(openRow.uid, serial, voided)}

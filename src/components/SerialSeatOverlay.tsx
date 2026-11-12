@@ -15,6 +15,8 @@ type SerialSeatOverlayProps = {
   /** RC admin: mark sticker reserved (hidden from VCT). */
   canReserve?: boolean;
   onToggleReserve?: (serial: string, reserved: boolean) => Promise<void>;
+  /** Unused PAS stickers. Hidden until the PAS switch is on. Not part of the GAS count. */
+  pasSerials?: string[];
   onClose: () => void;
 };
 
@@ -29,11 +31,22 @@ export function SerialSeatOverlay({
   onToggleVoid,
   canReserve = false,
   onToggleReserve,
+  pasSerials = [],
   onClose,
 }: SerialSeatOverlayProps) {
+  const [showPas, setShowPas] = useState(false);
+  const [query, setQuery] = useState('');
   const voidedKeys = new Set(voidedSerials.map(serial => serial.toLowerCase()));
   const reservedKeys = new Set(reservedSerials.map(serial => serial.toLowerCase()));
-  // Exact seats on screen (non-voided stickers in the list).
+  const gasKeys = new Set(serials.map(serial => serial.toLowerCase()));
+  const pasOnly = pasSerials.filter(serial => !gasKeys.has(serial.toLowerCase()));
+  const pasKeys = new Set(pasOnly.map(serial => serial.toLowerCase()));
+  const visible = showPas ? [...serials, ...pasOnly] : serials;
+  const needle = query.trim().toUpperCase().replace(/[\s\-_.]/g, '');
+  const shown = needle
+    ? visible.filter(serial => serial.toUpperCase().replace(/[\s\-_.]/g, '').includes(needle))
+    : visible;
+  // GAS seats only. PAS must not move the balance mismatch.
   const seatCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
   const reservedCount = countReservedOverlaySeats(serials, reservedSerials, voidedSerials);
   const balanceCount = expectedCount == null ? null : Math.max(0, expectedCount);
@@ -44,7 +57,12 @@ export function SerialSeatOverlay({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      if (query.trim()) {
+        setQuery('');
+        return;
+      }
+      onClose();
     };
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -53,7 +71,7 @@ export function SerialSeatOverlay({
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
     };
-  }, [onClose]);
+  }, [onClose, query]);
 
   const handleVoid = async (serial: string, nextVoided: boolean) => {
     if (!canVoid || !onToggleVoid || busy) return;
@@ -115,6 +133,18 @@ export function SerialSeatOverlay({
             </span>
           ) : null}
         </h2>
+        <label className="admin-setting-serial-pas-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={showPas}
+            onChange={event => setShowPas(event.target.checked)}
+            aria-label="Show PAS"
+          />
+          <span className="admin-setting-serial-pas-switch-track" aria-hidden />
+          <span>PAS</span>
+          <span className="admin-setting-serial-count-num">{pasOnly.length}</span>
+        </label>
         <button
           type="button"
           className="rv-payment-panel-close"
@@ -124,27 +154,48 @@ export function SerialSeatOverlay({
           <X size={18} />
         </button>
       </header>
+      <label className="admin-setting-serial-search">
+        <input
+          type="search"
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder="Search serial"
+          aria-label="Search serial"
+          autoFocus
+        />
+      </label>
       {canReserve ? (
         <p className="text-muted text-sm admin-setting-serial-hint">
           Tap a serial to reserve for RC admin (hidden from VCT). Reserved stickers show amber.
         </p>
       ) : null}
       {error ? <p className="login-error">{error}</p> : null}
-      {serials.length === 0 ? (
-        <p className="text-muted text-sm">No serial numbers.</p>
+      {shown.length === 0 ? (
+        <p className="text-muted text-sm">
+          {visible.length === 0 ? 'No serial numbers.' : `No serial matches ${query.trim()}.`}
+        </p>
       ) : (
         <ul className="admin-setting-serial-seats">
-          {serials.map(serial => {
+          {shown.map(serial => {
+            const pas = pasKeys.has(serial.toLowerCase());
             const voided = voidedKeys.has(serial.toLowerCase());
             const reserved = reservedKeys.has(serial.toLowerCase());
             const className = [
               'admin-setting-serial-seat',
               'text-mono',
+              pas ? 'admin-setting-serial-seat--pas' : '',
               voided ? 'admin-setting-serial-seat--voided' : '',
               reserved && !voided ? 'admin-setting-serial-seat--reserved' : '',
             ]
               .filter(Boolean)
               .join(' ');
+            if (pas) {
+              return (
+                <li key={serial} className={className}>
+                  {serial}
+                </li>
+              );
+            }
             if (canVoid && onToggleVoid) {
               return (
                 <li key={serial}>

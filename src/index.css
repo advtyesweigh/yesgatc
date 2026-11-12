@@ -1507,6 +1507,71 @@ button.admin-setting-serial-seat:disabled {
   color: #fbbf24;
 }
 
+.admin-setting-serial-seat--pas {
+  background: rgba(139, 92, 246, 0.14);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #ddd6fe;
+}
+
+.admin-setting-serial-pas-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  cursor: pointer;
+  color: #c4b5fd;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.admin-setting-serial-pas-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.admin-setting-serial-pas-switch-track {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.15rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.55);
+  transition: background 0.2s;
+}
+
+.admin-setting-serial-pas-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 0.12rem;
+  left: 0.12rem;
+  width: 0.96rem;
+  height: 0.96rem;
+  border-radius: 999px;
+  background: #f8fafc;
+  transition: transform 0.2s;
+}
+
+.admin-setting-serial-pas-switch input:checked + .admin-setting-serial-pas-switch-track {
+  background: #7c3aed;
+}
+
+.admin-setting-serial-pas-switch input:checked + .admin-setting-serial-pas-switch-track::after {
+  transform: translateX(0.95rem);
+}
+
+.admin-setting-serial-pas-switch input:focus-visible + .admin-setting-serial-pas-switch-track {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+
+.admin-setting-serial-pas-switch .admin-setting-serial-count-num {
+  color: #ddd6fe;
+  font-size: 0.92rem;
+}
+
 .admin-setting-serial-seat--used {
   background: rgba(56, 189, 248, 0.12);
   border-color: rgba(56, 189, 248, 0.38);
@@ -1533,6 +1598,33 @@ button.admin-setting-serial-seat:disabled {
 
 .product-serial-bank-empty {
   margin: 0.75rem 0.7rem;
+}
+
+.admin-setting-serial-search {
+  display: block;
+  flex-shrink: 0;
+  padding: 0.45rem 0.55rem 0;
+}
+
+.admin-setting-serial-search input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.48rem 0.7rem;
+}
+
+.admin-setting-serial-search input::placeholder {
+  color: #94a3b8;
+}
+
+.admin-setting-serial-search input:focus {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 1px;
 }
 
 .admin-setting-serial-hint {

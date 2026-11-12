@@ -74,5 +74,46 @@ describe('used allotment exclusion from Balance / chips', () => {
     assert.equal(seats.remaining.length, 157);
     assert.equal(seats.usedQty, 587);
     assert.equal(seats.balanceQty, 157);
+    assert.deepEqual(seats.pasRemaining, []);
+  });
+
+  it('Meezan unused PAS stickers join the GAS pool', () => {
+    const seats = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan',
+      ovQuota: '1002',
+      ovQuotaUsed: 948,
+      recordsAreRcWide: true,
+      storedSerials: ['G0001', 'YJ01001', 'YJ01002'],
+      allotSerials: ['YJ01002', 'YJ01003'],
+      voidedSerials: ['YJ01003'],
+      records: [{ id: 'ov-pas', serialNumber: 'YJ01002', productId: 'atm', verificationType: 'OV', status: 'submitted', rcId: 'meezan' } as SiteCalibration],
+      pasProductIds: ['atm'],
+      pasSerials: ['YJ01001', 'YJ01002', 'YJ01003', 'AS00276'],
+      allotmentUsedSerials: ['G0001'],
+    });
+    assert.deepEqual(seats.remaining, ['YJ01001']);
+    assert.deepEqual(seats.vctRemaining, ['YJ01001']);
+    assert.equal(seats.allottedQty, 1002);
+    assert.equal(seats.usedQty, 0);
+    assert.equal(seats.balanceQty, 1);
+    assert.deepEqual(seats.pasRemaining, ['YJ01001']);
+  });
+
+  it('other RC keeps PAS stickers out of the GAS pool', () => {
+    const seats = computeRcQuotaSeats({
+      rcCode: 'ACE',
+      companyName: 'ACE ELECTRONICS',
+      ovQuota: '3',
+      recordsAreRcWide: true,
+      storedSerials: ['G0586', 'YJ01001'],
+      allotSerials: [],
+      voidedSerials: [],
+      records: [] as SiteCalibration[],
+      pasSerials: ['YJ01001'],
+    });
+    assert.deepEqual(seats.remaining, ['G0586']);
+    assert.deepEqual(seats.pasRemaining, ['YJ01001']);
+    assert.equal(seats.balanceQty, 3);
   });
 });

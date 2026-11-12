@@ -55,6 +55,25 @@ export function excludePasQuotaSerials(
   });
 }
 
+/** Stickers `excludePasQuotaSerials` drops. GAS X/G and factory GATC stay out. */
+export function pasStickersAmong(
+  serials: readonly string[],
+  pasSerials: Iterable<string> | undefined,
+): string[] {
+  const kept = new Set(
+    excludePasQuotaSerials([...serials], pasSerials).map(serial => serial.trim().toUpperCase()),
+  );
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const serial of serials) {
+    const key = serial.trim().toUpperCase();
+    if (!key || kept.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(serial.trim());
+  }
+  return out;
+}
+
 /** Reserved chips currently shown on the RC serial overlay (not leftovers off-list). */
 export function countReservedOverlaySeats(
   serials: readonly string[],

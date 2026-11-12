@@ -263,6 +263,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
           serials={balanceSerials}
           voidedSerials={[]}
           reservedSerials={isRcAdmin ? quota.reservedSerials : []}
+          pasSerials={quota.pasRemaining}
           expectedCount={balanceQty}
           canVoid={false}
           canReserve={isRcAdmin}
