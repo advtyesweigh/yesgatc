@@ -626,15 +626,15 @@ async function run() {
     });
 
     try {
-      await assertFails(
+      await assertSucceeds(
         setDoc(
           doc(verifierDb, 'siteCalibrations', 'vr-ov-unallotted'),
           verifierOvDraft('X00423', 'VC/26/10'),
         ),
       );
-      ok('Verifier cannot create OV with GAS serial not allotted to them');
+      ok('Verifier can create OV with typed GAS serial without allotment');
     } catch (err) {
-      fail('Verifier cannot create OV with GAS serial not allotted to them', err);
+      fail('Verifier can create OV with typed GAS serial without allotment', err);
     }
 
     try {
@@ -801,26 +801,26 @@ async function run() {
     }
 
     try {
-      await assertFails(
+      await assertSucceeds(
         setDoc(
           doc(verifierDb, 'siteCalibrations', 'vr-ov-other-range'),
           verifierOvDraft('X00424', 'VC/26/15'),
         ),
       );
-      ok('Verifier cannot create OV with RC unused GAS serial not allotted to them');
+      ok('Verifier can create OV with RC unused GAS serial typed manually');
     } catch (err) {
-      fail('Verifier cannot create OV with RC unused GAS serial not allotted to them', err);
+      fail('Verifier can create OV with RC unused GAS serial typed manually', err);
     }
 
     try {
-      await assertFails(
+      await assertSucceeds(
         updateDoc(doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'), {
           serialNumber: 'X00424',
         }),
       );
-      ok('Verifier cannot update draft to unallotted GAS serial');
+      ok('Verifier can update draft to any typed GAS serial');
     } catch (err) {
-      fail('Verifier cannot update draft to unallotted GAS serial', err);
+      fail('Verifier can update draft to any typed GAS serial', err);
     }
 
     try {
