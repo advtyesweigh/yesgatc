@@ -5,6 +5,7 @@ import {
   excludePasQuotaSerials,
   pasStickersAmong,
   pickQuotaSerialsForActor,
+  pickQuotaToDoSerials,
   recordUsesPasQuota,
   resolveRcQuotaUsedQty,
 } from './rcQuotaMath.ts';
@@ -57,14 +58,14 @@ describe('PAS exclusion', () => {
   it('drops only explicitly blocked PAS serials from GAS lists', () => {
     assert.deepEqual(
       excludePasQuotaSerials(['G0001', 'YJ01001', 'G0002', 'VJ00151'], ['YJ01001']),
-      ['G0001', 'G0002', 'VJ00151'],
+      ['G0001', 'G0002'],
     );
   });
 
-  it('keeps Settings-bank YJ/VJ when not on the PAS block list', () => {
+  it('always drops YJ/AS/VJ from GAS lists even without an explicit block list', () => {
     assert.deepEqual(
-      excludePasQuotaSerials(['YJ00498', 'VJ00151', 'G0540'], []),
-      ['YJ00498', 'VJ00151', 'G0540'],
+      excludePasQuotaSerials(['YJ00498', 'VJ00151', 'AS00117', 'G0540'], []),
+      ['G0540'],
     );
   });
 
@@ -92,7 +93,7 @@ describe('PAS exclusion', () => {
 
   it('splits PAS stickers out of a mixed bank', () => {
     assert.deepEqual(
-      pasStickersAmong(['G0001', 'YJ01001', 'X00301', 'AS00276'], ['AS00276']),
+      pasStickersAmong(['G0001', 'YJ01001', 'X00301', 'AS00276'], ['YJ01001', 'AS00276']),
       ['YJ01001', 'AS00276'],
     );
   });
@@ -101,6 +102,32 @@ describe('PAS exclusion', () => {
     assert.equal(recordUsesPasQuota('atm', ['atm']), true);
     assert.equal(recordUsesPasQuota('mzn', ['atm']), false);
     assert.equal(recordUsesPasQuota('', ['atm']), false);
+  });
+});
+
+describe('pickQuotaToDoSerials', () => {
+  it('caps to quota to-do from unreserved unused only; never pads reserved', () => {
+    const remaining = Array.from({ length: 10 }, (_, i) => `YJ${String(i + 1).padStart(5, '0')}`);
+    const reserved = ['YJ00008', 'YJ00009', 'YJ00010'];
+    assert.deepEqual(pickQuotaToDoSerials(remaining, reserved, 5), [
+      'YJ00001',
+      'YJ00002',
+      'YJ00003',
+      'YJ00004',
+      'YJ00005',
+    ]);
+  });
+
+  it('excludes reserved even when under balanceQty', () => {
+    assert.deepEqual(pickQuotaToDoSerials(['A', 'B'], ['B'], 5), ['A']);
+  });
+
+  it('returns empty when all remaining are reserved', () => {
+    assert.deepEqual(pickQuotaToDoSerials(['A', 'B'], ['A', 'B'], 54), []);
+  });
+
+  it('case-insensitive reserved match', () => {
+    assert.deepEqual(pickQuotaToDoSerials(['yj1', 'YJ2'], ['YJ1'], 10), ['YJ2']);
   });
 });
 
@@ -336,30 +363,33 @@ describe('pickQuotaSerialsForActor', () => {
   });
 });
 
-describe('OV gate PAS vs GAS', () => {
+describe('OV/RV Balance gate (quota only)', () => {
   const emptyGate = { remaining: [] as string[], balanceQty: 0, heldSerials: [] as string[] };
 
-  it('allows new OV when GAS balance is 0 if PAS products exist', () => {
-    assert.equal(validateOvQuotaSetup('OV', emptyGate, true, true), null);
+  it('blocks OV and RV when Balance is 0 (PAS no longer bypasses)', () => {
     assert.equal(
-      validateOvQuotaSetup('OV', emptyGate, true, false),
-      'OV quota balance is 0. Cannot start Original Verification.',
+      validateOvQuotaSetup('OV', emptyGate, true, true),
+      'Balance is 0. Cannot start Original Verification.',
+    );
+    assert.equal(
+      validateOvQuotaSetup('RV', emptyGate, true, false),
+      'Balance is 0. Cannot start Re-verification.',
     );
   });
 
-  it('verifier empty remaining is allotted-to-you, not RC qty 0', () => {
+  it('allows OV when Balance &gt; 0 even with empty remaining stickers', () => {
     assert.equal(
       validateOvQuotaSetup(
         'OV',
-        { remaining: [], balanceQty: 0, heldSerials: [], scopedToVerifier: true },
+        { remaining: [], balanceQty: 54, heldSerials: [] },
         true,
         false,
       ),
-      'No serials allotted to you. Cannot start Original Verification.',
+      null,
     );
   });
 
-  it('verifier direct bank skips Yesone remaining / reservedByUid gate', () => {
+  it('verifier direct bank skips Balance gate', () => {
     assert.equal(
       validateOvQuotaSetup(
         'OV',
@@ -385,7 +415,7 @@ describe('OV gate PAS vs GAS', () => {
     );
   });
 
-  it('does not charge PAS devices against GAS qty', () => {
+  it('does not charge PAS devices against Balance; GAS typed serials do', () => {
     assert.equal(
       validateOvQuotaDevices('OV', [{ serial: 'YJ01001', pas: true }], emptyGate),
       null,
@@ -394,9 +424,17 @@ describe('OV gate PAS vs GAS', () => {
       validateOvQuotaDevices(
         'OV',
         [{ serial: 'G0001', pas: false }],
-        { remaining: ['G0001'], balanceQty: 0, heldSerials: [] },
+        { remaining: [], balanceQty: 0, heldSerials: [] },
       ),
-      'OV quota balance is 0. Cannot start more GAS Original Verifications.',
+      'Balance is 0. Cannot start more Original Verifications.',
+    );
+    assert.equal(
+      validateOvQuotaDevices(
+        'OV',
+        [{ serial: 'ANY123', pas: false }],
+        { remaining: [], balanceQty: 2, heldSerials: [] },
+      ),
+      null,
     );
   });
 });

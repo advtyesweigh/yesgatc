@@ -36,11 +36,6 @@ import {
 import { validateOvQuotaDevices, validateOvQuotaSetup, type OvQuotaGate } from './ovQuotaGate';
 import { validateVerifierOvStart } from './verifierOvInName';
 import { catalogueHasPasProducts, quotaSerialRows } from './pasSerialBank';
-import {
-  gasAllottedChoices,
-  serialEntryMode,
-  validateSerialForProductPool,
-} from './serialEntryPool';
 
 export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'serial' | 'site' | 'photos';
 
@@ -377,26 +372,6 @@ function serialStepBlockReason(
     if (!row.serialNumber.trim()) return `${label}: serial number is required.`;
     if (values.verificationType === 'RV' && !isValidManufacturingYear(row.manufacturingYear)) {
       return `${label}: select year of manufacturing.`;
-    }
-    const product = context?.products?.find(item => item.id === row.productId) ?? null;
-    const mode = serialEntryMode(product);
-    const gasChoices = gasAllottedChoices({
-      remaining: context?.ovQuota?.remaining ?? [],
-      allotments: context?.ovQuota?.remainingAllotments,
-      heldSerials: context?.ovQuota?.heldSerials,
-      product,
-      fallbackProduct: { productId: row.productId, productName: row.productName },
-    });
-    const poolError = validateSerialForProductPool({
-      mode,
-      verificationType: values.verificationType,
-      serial: row.serialNumber,
-      gasChoices,
-      scopedToVerifier: Boolean(context?.ovQuota?.scopedToVerifier),
-      serialSource: row.serialSource,
-    });
-    if (poolError && poolError !== 'Serial number is required.') {
-      return `${label}: ${poolError}`;
     }
   }
 

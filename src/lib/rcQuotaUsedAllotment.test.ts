@@ -39,20 +39,21 @@ describe('used allotment exclusion from Balance / chips', () => {
     assert.ok(seats.usedSerials.includes('G0585'));
   });
 
-  it('Settings-bank YJ/VJ stay in remaining when not PAS-blocked', () => {
+  it('Settings-bank YJ/VJ stay out of GAS remaining when PAS-blocked', () => {
     const seats = computeRcQuotaSeats({
       rcCode: 'MZN',
       companyName: 'Meezan',
       ovQuota: '56',
       ovQuotaUsed: 0,
       recordsAreRcWide: true,
-      storedSerials: ['YJ00498', 'VJ00151'],
-      allotSerials: ['YJ00498', 'VJ00151'],
+      storedSerials: ['YJ00498', 'VJ00151', 'G0582'],
+      allotSerials: ['YJ00498', 'VJ00151', 'G0582'],
       voidedSerials: [],
       records: [] as SiteCalibration[],
-      pasSerials: [],
+      pasSerials: ['YJ00498', 'VJ00151'],
     });
-    assert.deepEqual(seats.remaining.sort(), ['VJ00151', 'YJ00498']);
+    assert.deepEqual(seats.remaining, ['G0582']);
+    assert.deepEqual(seats.pasRemaining.sort(), ['VJ00151', 'YJ00498']);
   });
 
   it('admin table: stale YesOne used=allotted does not wipe remaining seats', () => {
@@ -77,7 +78,7 @@ describe('used allotment exclusion from Balance / chips', () => {
     assert.deepEqual(seats.pasRemaining, []);
   });
 
-  it('Meezan unused PAS stickers join the GAS pool', () => {
+  it('Meezan keeps unused PAS in pasRemaining only; GAS remaining stays GAS; Balance allotted−used', () => {
     const seats = computeRcQuotaSeats({
       rcCode: 'MZN',
       companyName: 'Meezan',
@@ -92,12 +93,87 @@ describe('used allotment exclusion from Balance / chips', () => {
       pasSerials: ['YJ01001', 'YJ01002', 'YJ01003', 'AS00276'],
       allotmentUsedSerials: ['G0001'],
     });
-    assert.deepEqual(seats.remaining, ['YJ01001']);
-    assert.deepEqual(seats.vctRemaining, ['YJ01001']);
+    assert.deepEqual(seats.remaining, []);
+    assert.deepEqual(seats.vctRemaining, []);
     assert.equal(seats.allottedQty, 1002);
     assert.equal(seats.usedQty, 0);
-    assert.equal(seats.balanceQty, 1);
+    assert.equal(seats.balanceQty, 1002);
     assert.deepEqual(seats.pasRemaining, ['YJ01001']);
+  });
+
+  it('Meezan Balance tile is allotted−used, not PAS bank length', () => {
+    const bank = Array.from({ length: 335 }, (_, i) => `YJ${String(i + 1).padStart(5, '0')}`);
+    const seats = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan electronic scales pvt ltd',
+      ovQuota: '1002',
+      ovQuotaUsed: 948,
+      recordsAreRcWide: true,
+      storedSerials: bank,
+      allotSerials: bank,
+      voidedSerials: [],
+      pasSerials: bank,
+      records: Array.from({ length: 948 }, (_, i) => ({
+        id: `ov-${i}`,
+        serialNumber: `X${String(i + 1).padStart(5, '0')}`,
+        verificationType: 'OV',
+        status: 'submitted',
+        rcId: 'meezan',
+      })) as SiteCalibration[],
+    });
+    assert.equal(seats.allottedQty, 1002);
+    assert.equal(seats.usedQty, 948);
+    assert.equal(seats.balanceQty, 54);
+    assert.equal(seats.remaining.length, 0);
+    assert.equal(seats.pasRemaining.length, 335);
+  });
+
+  it('done YJ/AS/VJ on jobs stay out of available even after Settings re-add', () => {
+    const seats = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan',
+      ovQuota: '1002',
+      ovQuotaUsed: 948,
+      recordsAreRcWide: true,
+      storedSerials: ['YJ01086', 'AS00117', 'VJ00151', 'YJ09999'],
+      allotSerials: ['YJ01086', 'AS00117', 'VJ00151', 'YJ09999'],
+      voidedSerials: [],
+      records: [
+        {
+          id: 'ov-yj',
+          serialNumber: 'YJ01086',
+          productId: 'atm',
+          verificationType: 'OV',
+          status: 'submitted',
+          rcId: 'meezan',
+        },
+        {
+          id: 'ov-as',
+          serialNumber: 'AS00117',
+          productId: 'q8',
+          verificationType: 'OV',
+          status: 'certified',
+          rcId: 'meezan',
+        },
+        {
+          id: 'ov-vj',
+          serialNumber: 'VJ00151',
+          productId: 'atm',
+          verificationType: 'OV',
+          status: 'draft',
+          rcId: 'meezan',
+        },
+      ] as SiteCalibration[],
+      pasProductIds: ['atm', 'q8'],
+      // PAS-format never enters GAS remaining (job-held still blocked from pasRemaining).
+      pasSerials: [],
+      allotmentUsedSerials: [],
+    });
+    assert.deepEqual(seats.remaining, []);
+    assert.equal(seats.remaining.includes('YJ01086'), false);
+    assert.equal(seats.remaining.includes('AS00117'), false);
+    assert.equal(seats.remaining.includes('VJ00151'), false);
+    assert.deepEqual(seats.pasRemaining, ['YJ09999']);
   });
 
   it('other RC keeps PAS stickers out of the GAS pool', () => {

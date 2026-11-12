@@ -42,7 +42,7 @@ export function isMasterRc(row: { rcCode?: string; companyName?: string }): bool
 
 const MEEZAN_RC_CODE = 'MZN';
 
-/** Meezan unused stickers (including former PAS) are one GAS bank for any scale. */
+/** Meezan RC identity (PAS stickers stay in `pasRemaining`, not GAS stamp remaining). */
 export function isMeezanRc(row: { rcCode?: string; companyName?: string }): boolean {
   const code = (row.rcCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3);
   if (code === MEEZAN_RC_CODE) return true;
@@ -201,28 +201,45 @@ export function computeRcQuotaSeats(input: {
     ...(master ? { fromDate: IWP_USED_FROM_DATE } : {}),
     pasProductIds: input.pasProductIds,
   });
+  // Any live job serial (incl. PAS OV) — Settings re-adds must not resurface as available.
+  const jobHeldSerials = uniqueSerials(
+    input.records
+      .filter(record => {
+        if (record.certificateVoidedAt?.trim()) return false;
+        if (record.status === 'rejected') return false;
+        return Boolean(String(record.serialNumber || '').trim());
+      })
+      .map(record => String(record.serialNumber || '').trim()),
+  );
   const usedSerials = uniqueSerials([
     ...used.serials,
     ...(input.allotmentUsedSerials || []),
   ]);
-  const gasRemaining = remainingQuotaSerials(allottedSerials, usedSerials, input.voidedSerials);
+  const remainingBlocked = uniqueSerials([...usedSerials, ...jobHeldSerials]);
+  const gasRemaining = remainingQuotaSerials(
+    allottedSerials,
+    remainingBlocked,
+    input.voidedSerials,
+  );
   const reservedSerials = unusedSerials(
     uniqueSerials(input.reservedSerials || []),
-    [...usedSerials, ...input.voidedSerials],
+    [...remainingBlocked, ...input.voidedSerials],
   );
-  const recordSerials = input.records.map(record => String(record.serialNumber || '').trim());
   const pasRemaining = unusedSerials(pasStickersAmong(rawBank, input.pasSerials), [
-    ...usedSerials,
+    ...remainingBlocked,
     ...input.voidedSerials,
-    ...recordSerials,
   ]);
-  const meezan = isMeezanRc({ rcCode: input.rcCode, companyName: input.companyName });
-  const remaining = meezan ? uniqueSerials([...gasRemaining, ...pasRemaining]) : gasRemaining;
+  // GAS stamp boards (Balance overlay + OV picker) = unused GAS only.
+  // Never dump PAS (YJ/AS/VJ) into remaining — Meezan included.
+  const remaining = gasRemaining;
   const vctRemaining = excludeReservedSerials(remaining, reservedSerials);
   const reservedForUids = uniqueSerials(input.reservedForUids || []);
   const reservedByUid: Record<string, string[]> = {};
   for (const [uid, serials] of Object.entries(input.reservedByUid || {})) {
-    const kept = unusedSerials(uniqueSerials(serials), [...usedSerials, ...input.voidedSerials]);
+    const kept = unusedSerials(uniqueSerials(serials), [
+      ...remainingBlocked,
+      ...input.voidedSerials,
+    ]);
     if (kept.length > 0) reservedByUid[uid] = kept;
   }
   const allottedQty = master ? masterRcUnusedQty() : parseQuotaInput(input.ovQuota);
@@ -236,11 +253,8 @@ export function computeRcQuotaSeats(input: {
     allottedQty,
     remainingCount: gasRemaining.length,
   });
-  const balanceQty = meezan
-    ? remaining.length
-    : allottedQty == null
-      ? gasRemaining.length
-      : allottedQty - usedQty;
+  // Quota to-do = allotted − used when qty present. Never bank / remaining.length.
+  const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
   return {
     remaining,
     vctRemaining,

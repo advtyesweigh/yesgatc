@@ -98,7 +98,7 @@ export function SerialSettingsPanel() {
               setRaw(e.target.value);
             }}
             disabled={saving}
-            placeholder="YJ00498, VJ00151, G0585, X00796"
+            placeholder="G0585, X00796"
             aria-label="GAS serials"
           />
         </label>

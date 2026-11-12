@@ -35,18 +35,11 @@ export function usePasBlockedSerials(
   }, []);
 
   return useMemo(() => {
-    const blocked = mergePasBlockedSerials(
+    // Include PAS-format + PAS-product allotments and meta ranges.
+    // pool=gas Settings tags must not unblock YJ/AS/VJ onto GAS stamp boards.
+    return mergePasBlockedSerials(
       pasSerialsFromAllotments(allotmentRows, products),
       metaSerials,
     );
-    // Settings-added GAS seats (any format) must stay stampable even if YJ overlaps PAS meta.
-    const gasSeats = new Set(
-      allotmentRows
-        .filter(row => String(row.pool || '').trim().toLowerCase() === 'gas')
-        .map(row => row.serialNumber.trim().toUpperCase())
-        .filter(Boolean),
-    );
-    if (gasSeats.size === 0) return blocked;
-    return blocked.filter(serial => !gasSeats.has(serial.trim().toUpperCase()));
   }, [allotmentRows, metaSerials, products]);
 }

@@ -6,7 +6,6 @@ import {
   computeRcQuotaSeats,
   excludeReservedSerials,
   normalizeReservedAssignments,
-  toggleReservedSerial,
 } from '../lib/rcMasterQuota';
 import {
   expandSerialRange,
@@ -29,7 +28,6 @@ import {
   normalizeVerifierAllottedByUid,
 } from '../lib/vrAllotted';
 import type { SiteCalibration } from '../types';
-import { SerialSeatOverlay } from './SerialSeatOverlay';
 
 type RcQuotaOverviewProps = {
   rcUid: string;
@@ -61,7 +59,6 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
   const [quotaRecords, setQuotaRecords] = useState<SiteCalibration[]>(records);
   const [rcWideOk, setRcWideOk] = useState(false);
-  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     setQuotaRecords(prev => (rcWideOk ? prev : records));
@@ -207,70 +204,44 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     ],
   );
 
-  // VCT: never show verifier-reserved stickers (mask from balance overlay + count).
+  // Balance qty = allotted − used (source of truth). No serial overlay on tap.
   const balanceSerials = useMemo(() => {
     if (isRcAdmin) return quota.remaining;
-    // Field staff / VCT: public pool only.
     return excludeReservedSerials(quota.vctRemaining, mergedReserved);
   }, [isRcAdmin, mergedReserved, quota.remaining, quota.vctRemaining]);
 
   const balanceQty = isRcAdmin ? quota.balanceQty : balanceSerials.length;
 
   return (
-    <>
-      <section className="wl-stages-panel wl-quota" aria-labelledby="wl-quota-title">
-        <div className="wl-section__head">
-          <h2 id="wl-quota-title" className="wl-section__title">
-            Quota
-          </h2>
-        </div>
-        <div className="rc-summary-row wl-quota-row">
-          <article className="rc-summary-tile rc-summary-tile--blue">
-            <p className="rc-summary-tile__label">
-              <Layers size={16} strokeWidth={2.2} aria-hidden />
-              Allotted
-            </p>
-            <p className="rc-summary-tile__value">{displayQty(quota.allottedQty)}</p>
-          </article>
-          <article className="rc-summary-tile rc-summary-tile--pink">
-            <p className="rc-summary-tile__label">
-              <CircleDot size={16} strokeWidth={2.2} aria-hidden />
-              Used
-            </p>
-            <p className="rc-summary-tile__value">{displayQty(quota.usedQty)}</p>
-          </article>
-          <button
-            type="button"
-            className="rc-summary-tile rc-summary-tile--green"
-            onClick={() => setOpen(true)}
-            aria-label="Balance serial numbers"
-          >
-            <p className="rc-summary-tile__label">
-              <Hash size={16} strokeWidth={2.2} aria-hidden />
-              Balance
-            </p>
-            <p className="rc-summary-tile__value">
-              {displayQty(balanceQty)}
-            </p>
-          </button>
-        </div>
-      </section>
-
-      {open ? (
-        <SerialSeatOverlay
-          companyName={companyName || 'RC'}
-          rcCode={rcCode}
-          serials={balanceSerials}
-          voidedSerials={[]}
-          reservedSerials={isRcAdmin ? quota.reservedSerials : []}
-          pasSerials={quota.pasRemaining}
-          expectedCount={balanceQty}
-          canVoid={false}
-          canReserve={isRcAdmin}
-          onToggleReserve={(serial, reserved) => toggleReservedSerial(rcUid, serial, reserved)}
-          onClose={() => setOpen(false)}
-        />
-      ) : null}
-    </>
+    <section className="wl-stages-panel wl-quota" aria-labelledby="wl-quota-title">
+      <div className="wl-section__head">
+        <h2 id="wl-quota-title" className="wl-section__title">
+          Quota
+        </h2>
+      </div>
+      <div className="rc-summary-row wl-quota-row">
+        <article className="rc-summary-tile rc-summary-tile--blue">
+          <p className="rc-summary-tile__label">
+            <Layers size={16} strokeWidth={2.2} aria-hidden />
+            Allotted
+          </p>
+          <p className="rc-summary-tile__value">{displayQty(quota.allottedQty)}</p>
+        </article>
+        <article className="rc-summary-tile rc-summary-tile--pink">
+          <p className="rc-summary-tile__label">
+            <CircleDot size={16} strokeWidth={2.2} aria-hidden />
+            Used
+          </p>
+          <p className="rc-summary-tile__value">{displayQty(quota.usedQty)}</p>
+        </article>
+        <article className="rc-summary-tile rc-summary-tile--green" aria-label="Balance">
+          <p className="rc-summary-tile__label">
+            <Hash size={16} strokeWidth={2.2} aria-hidden />
+            Balance
+          </p>
+          <p className="rc-summary-tile__value">{displayQty(balanceQty)}</p>
+        </article>
+      </div>
+    </section>
   );
 }

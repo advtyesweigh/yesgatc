@@ -30,8 +30,7 @@ function allotmentPool(row: Pick<OvQuotaAllotment, 'pool'>): string {
 
 /**
  * Unused GAS stickers are one bank for every GAS product.
- * Yesone sku / productId / model must not hide seats (Bench PC vs other GAS SKU).
- * PAS-pool stickers never appear here.
+ * Kept for Balance accounting / legacy callers — stamp UI no longer picks from this list.
  */
 export function remainingSerialsForProduct(
   remaining: string[],
@@ -50,14 +49,14 @@ export function remainingSerialsForProduct(
   return remaining.filter(serial => !pasKeys.has(serialKey(serial)));
 }
 
-/** GAS OV quantity left (Allotted − Used). PAS does not consume this. */
+/** OV/RV quantity left (Allotted − Used). Source of truth for work left. */
 export function ovQuotaQtyCap(gate: OvQuotaGate): number {
   return gate.balanceQty == null ? gate.remaining.length : Math.max(0, gate.balanceQty);
 }
 
-/** New GAS seats left: min(qty, unused stickers). PAS does not use stickers. */
+/** @deprecated Prefer ovQuotaQtyCap — stamp no longer binds unused sticker count. */
 export function ovQuotaSeatCap(gate: OvQuotaGate): number {
-  return Math.min(ovQuotaQtyCap(gate), gate.remaining.length);
+  return ovQuotaQtyCap(gate);
 }
 
 export function ovSerialChoicesForRow(
@@ -82,22 +81,24 @@ export function ovSerialChoicesForRow(
   return out.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+/**
+ * New OV/RV requires Balance &gt; 0. No allotted-sticker / bank membership check.
+ * Direct Interweighing source may still start when Balance is 0.
+ */
 export function validateOvQuotaSetup(
   verificationType: string,
   gate: OvQuotaGate | null | undefined,
   isNew: boolean,
-  hasPasProducts = false,
+  _hasPasProducts = false,
 ): string | null {
-  if (!gate || verificationType !== 'OV' || !isNew) return null;
+  void _hasPasProducts;
+  if (!gate || !isNew) return null;
+  if (verificationType !== 'OV' && verificationType !== 'RV') return null;
   if (gate.allowInterweighingDirect) return null;
-  if (gate.scopedToVerifier && !hasPasProducts && gate.remaining.length <= 0) {
-    return 'No serials allotted to you. Cannot start Original Verification.';
-  }
-  if (ovQuotaQtyCap(gate) <= 0 && !hasPasProducts) {
-    return 'OV quota balance is 0. Cannot start Original Verification.';
-  }
-  if (!hasPasProducts && gate.remaining.length <= 0) {
-    return 'No allotted serials left. Cannot start Original Verification.';
+  if (ovQuotaQtyCap(gate) <= 0) {
+    return verificationType === 'RV'
+      ? 'Balance is 0. Cannot start Re-verification.'
+      : 'Balance is 0. Cannot start Original Verification.';
   }
   return null;
 }
@@ -112,6 +113,10 @@ function isDirectQuotaRow(row: OvQuotaDeviceRow): boolean {
   return String(row.serialSource || '').trim() === 'interweighingDirect';
 }
 
+/**
+ * OV devices: require typed serial + Balance qty for GAS seats.
+ * No “must be in allotted remaining” check. PAS does not consume Balance.
+ */
 export function validateOvQuotaDevices(
   verificationType: string,
   rows: OvQuotaDeviceRow[],
@@ -119,46 +124,28 @@ export function validateOvQuotaDevices(
 ): string | null {
   if (!gate || verificationType !== 'OV') return null;
   const held = new Set(gate.heldSerials.map(serialKey).filter(Boolean));
-  const remaining = new Set(gate.remaining.map(serialKey).filter(Boolean));
   const seen = new Set<string>();
   let newGas = 0;
-  let newPas = 0;
   for (const row of rows) {
     const serial = (row.serial || '').trim();
     const pas = Boolean(row.pas);
     const direct = isDirectQuotaRow(row);
     if (!serial) {
-      if (pas) newPas += 1;
-      else if (!direct) newGas += 1;
+      if (!pas && !direct) newGas += 1;
       continue;
     }
     const key = serialKey(serial);
     if (seen.has(key)) return `Serial ${serial} is used more than once.`;
     seen.add(key);
     if (held.has(key)) continue;
-    if (pas) {
-      newPas += 1;
-      continue;
-    }
-    if (direct) continue;
-    if (!remaining.has(key)) {
-      return `Serial ${serial} is not in allotted balance. Use an allotted serial for OV.`;
-    }
+    if (pas || direct) continue;
     newGas += 1;
-  }
-  if (newGas > gate.remaining.length) {
-    const stickers = gate.remaining.length;
-    return stickers <= 0
-      ? gate.scopedToVerifier
-        ? 'No serials allotted to you. Use a PAS product or wait for allotment.'
-        : 'No allotted serials left. Use a PAS product or wait for serial allotment.'
-      : `Allotted serials: ${stickers} left. You can start ${stickers} more GAS Original Verification(s).`;
   }
   const qtyCap = ovQuotaQtyCap(gate);
   if (newGas > qtyCap) {
     return qtyCap <= 0
-      ? 'OV quota balance is 0. Cannot start more GAS Original Verifications.'
-      : `OV quota: ${qtyCap} left. You can start ${qtyCap} more GAS Original Verification(s).`;
+      ? 'Balance is 0. Cannot start more Original Verifications.'
+      : `Balance: ${qtyCap} left. You can start ${qtyCap} more Original Verification(s).`;
   }
   return null;
 }

@@ -1,4 +1,8 @@
-import { isFactoryGatcSticker, isGasStickerSerial } from './pasSerialBankMatch.ts';
+import {
+  isFactoryGatcSticker,
+  isGasStickerSerial,
+  isPasStickerSerial,
+} from './pasSerialBankMatch.ts';
 
 /** GAS RC quota qty. PAS seats never consume or inflate these numbers. */
 
@@ -50,7 +54,9 @@ export function excludePasQuotaSerials(
     if (!key) return false;
     // G/X + factory always keep (never strip because a PAS range exists).
     if (isGasStickerSerial(key) || isFactoryGatcSticker(key)) return true;
-    // Settings bank may hold any format (YJ/VJ/numeric). Drop only explicit PAS block list.
+    // YJ/AS/VJ never belong on GAS remaining / OV chip grids.
+    if (isPasStickerSerial(key)) return false;
+    // Other formats: drop only explicit PAS block list.
     return !blocked.has(key);
   });
 }
@@ -91,6 +97,28 @@ export function countReservedOverlaySeats(
     if (!key || voided.has(key)) return false;
     return reserved.has(key);
   }).length;
+}
+
+/**
+ * RC Balance overlay list: unreserved unused only, capped to quota to-do.
+ * Never pad with reserved/amber. Hero balanceQty may exceed list length.
+ */
+export function pickQuotaToDoSerials(
+  remaining: readonly string[],
+  reservedSerials: readonly string[],
+  balanceQty: number | null,
+): string[] {
+  const reserved = new Set(
+    reservedSerials.map(serial => serial.trim().toUpperCase()).filter(Boolean),
+  );
+  const free: string[] = [];
+  for (const serial of remaining) {
+    const key = serial.trim().toUpperCase();
+    if (!key || reserved.has(key)) continue;
+    free.push(serial);
+  }
+  if (balanceQty == null || balanceQty < 0) return free;
+  return free.slice(0, balanceQty);
 }
 
 export type QuotaSerialActorSeats = {

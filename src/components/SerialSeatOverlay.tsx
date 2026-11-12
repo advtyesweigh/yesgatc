@@ -10,9 +10,13 @@ type SerialSeatOverlayProps = {
   voidedSerials: string[];
   reservedSerials?: string[];
   expectedCount: number | null;
+  /**
+   * RC Balance: hero = quota to-do (expectedCount). Never bank length / ≠ mismatch.
+   */
+  quotaToDoHeader?: boolean;
   canVoid: boolean;
   onToggleVoid?: (serial: string, voided: boolean) => Promise<void>;
-  /** RC admin: mark sticker reserved (hidden from VCT). */
+  /** RC admin: mark sticker reserved. */
   canReserve?: boolean;
   onToggleReserve?: (serial: string, reserved: boolean) => Promise<void>;
   /** Unused PAS stickers. Hidden until the PAS switch is on. Not part of the GAS count. */
@@ -27,6 +31,7 @@ export function SerialSeatOverlay({
   voidedSerials,
   reservedSerials = [],
   expectedCount,
+  quotaToDoHeader = false,
   canVoid,
   onToggleVoid,
   canReserve = false,
@@ -46,12 +51,15 @@ export function SerialSeatOverlay({
   const shown = needle
     ? visible.filter(serial => serial.toUpperCase().replace(/[\s\-_.]/g, '').includes(needle))
     : visible;
-  // GAS seats only. PAS must not move the balance mismatch.
   const seatCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
   const reservedCount = countReservedOverlaySeats(serials, reservedSerials, voidedSerials);
   const balanceCount = expectedCount == null ? null : Math.max(0, expectedCount);
-  const mismatch = balanceCount != null && balanceCount !== seatCount;
-  const showReservedCount = canReserve || reservedCount > 0;
+  const headerCount =
+    quotaToDoHeader && balanceCount != null ? balanceCount : seatCount;
+  const mismatch =
+    !quotaToDoHeader && balanceCount != null && balanceCount !== seatCount;
+  // Balance available-only: no reserved line (list already excludes reserved).
+  const showReservedCount = !quotaToDoHeader && (canReserve || reservedCount > 0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -115,10 +123,12 @@ export function SerialSeatOverlay({
             title={
               mismatch && balanceCount != null
                 ? `Mismatch: balance ${balanceCount}, seats ${seatCount}`
-                : undefined
+                : quotaToDoHeader
+                  ? 'Quota to be done'
+                  : undefined
             }
           >
-            {seatCount}
+            {headerCount}
             {mismatch && balanceCount != null ? (
               <span className="admin-setting-serial-count-mismatch"> ≠{balanceCount}</span>
             ) : null}
@@ -126,7 +136,7 @@ export function SerialSeatOverlay({
           {showReservedCount ? (
             <span
               className="admin-setting-serial-count-num admin-setting-serial-count-num--reserved"
-              title="Reserved for RC admin (hidden from VCT)"
+              title="Reserved"
             >
               <span>reserved</span>
               {reservedCount}
@@ -166,7 +176,7 @@ export function SerialSeatOverlay({
       </label>
       {canReserve ? (
         <p className="text-muted text-sm admin-setting-serial-hint">
-          Tap a serial to reserve for RC admin (hidden from VCT). Reserved stickers show amber.
+          Tap a serial to reserve. Reserved stickers show amber.
         </p>
       ) : null}
       {error ? <p className="login-error">{error}</p> : null}
@@ -219,9 +229,7 @@ export function SerialSeatOverlay({
                     type="button"
                     className={className}
                     aria-pressed={reserved}
-                    aria-label={
-                      reserved ? `Unreserve ${serial} for VCT` : `Reserve ${serial} for RC admin`
-                    }
+                    aria-label={reserved ? `Unreserve ${serial}` : `Reserve ${serial}`}
                     disabled={Boolean(busy)}
                     onClick={() => void handleReserve(serial, !reserved)}
                   >

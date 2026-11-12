@@ -68,10 +68,11 @@ test('addRcGasSerialsCore writes YJ/VJ into bank + allotments without bumping ov
   assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('YJ00498'));
   assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('VJ00151'));
   assert.equal(db._store['serialAllotments/YJ00498'].rcId, 'rc1');
-  assert.equal(db._store['serialAllotments/YJ00498'].pool, 'gas');
+  assert.equal(db._store['serialAllotments/YJ00498'].pool, 'pas');
   assert.equal(db._store['serialAllotments/YJ00498'].source, 'rc_settings');
   assert.equal(db._store['serialAllotments/VJ00151'].status, 'allotted');
-  assert.equal(db._store['serialAllotments/VJ00151'].pool, 'gas');
+  assert.equal(db._store['serialAllotments/VJ00151'].pool, 'pas');
+  assert.equal(db._store['serialAllotments/G0002'].pool, 'gas');
 });
 
 test('addRcGasSerialsCore rejects foreign RC allotments without steal', async () => {

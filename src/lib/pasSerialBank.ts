@@ -105,9 +105,10 @@ export function pasSerialsFromAllotments(
     return pasSerialsOnly(
       rows
         .filter(row => {
+          if (isPasStickerSerial(row.serialNumber)) return true;
           const pool = String(row.pool || '').trim().toLowerCase();
           if (pool === 'gas') return false;
-          return pool === 'pas' || isPasStickerSerial(row.serialNumber);
+          return pool === 'pas';
         })
         .map(row => row.serialNumber),
     );
@@ -132,31 +133,16 @@ function firebaseDenied(err: unknown): boolean {
   );
 }
 
+/** Open manual serial — no PAS number-bank membership check. */
 export async function verifyPasSerialInBank(
   serial: string,
-  product: Product,
-  options?: PasBankVerifyOptions,
+  _product: Product,
+  _options?: PasBankVerifyOptions,
 ): Promise<string | null> {
-  const trimmed = serial.trim();
-  const id = pasSerialDocId(trimmed);
-  if (!id) return 'Serial number is required.';
-  try {
-    const snap = await getDoc(doc(db, PAS_SERIAL_BANK_COLLECTION, id));
-    const data = snap.exists() ? ((snap.data() || {}) as PasBankDoc) : null;
-    const lookup = interpretPasBankLookup(trimmed, data, product, options);
-    if (!lookup || !data || !/already used/i.test(lookup)) return lookup;
-    const holderId = String(data.usedRecordId || '').trim();
-    if (!holderId || holderId === String(options?.ownRecordId || '').trim()) return null;
-    const holder = await getDoc(doc(db, 'siteCalibrations', holderId));
-    const holderStatus = holder.exists() ? String(holder.data()?.status || '') : null;
-    if (!pasSerialHoldIsStale(holder.exists(), holderStatus)) return lookup;
-    return interpretPasBankLookup(trimmed, { ...data, status: 'available' }, product, options);
-  } catch (err) {
-    if (firebaseDenied(err)) {
-      return 'PAS number bank is blocked. Super admin must deploy Firestore rules.';
-    }
-    return err instanceof Error ? err.message : 'Could not check PAS number bank.';
-  }
+  void _product;
+  void _options;
+  if (!serial.trim()) return 'Serial number is required.';
+  return null;
 }
 
 export async function verifyPasDevicesInBank(
@@ -223,29 +209,24 @@ export async function markPasSerialUsed(options: {
   const ref = doc(db, PAS_SERIAL_BANK_COLLECTION, id);
   await runTransaction(db, async tx => {
     const snap = await tx.get(ref);
-    if (!snap.exists()) {
-      throw new Error(`Serial ${trimmed} is not in the PAS number bank.`);
-    }
+    // Open serials: missing bank row is OK — do not block submit.
+    if (!snap.exists()) return;
     const data = (snap.data() || {}) as PasBankDoc;
     const rcError = pasBankRcError(trimmed, data, options.rcId);
     if (rcError) throw new Error(rcError);
     const status = String(data.status || '').trim().toLowerCase();
+    // Soft bookkeeping only — never block submit on bank status/product mismatch.
     if (status === 'used') {
       if (options.recordId && data.usedRecordId === options.recordId) return;
       if (options.allowUsed) return;
       const holderId = String(data.usedRecordId || '').trim();
-      if (!holderId) throw new Error(`Serial ${trimmed} is already used.`);
+      if (!holderId) return;
       const holder = await tx.get(doc(db, 'siteCalibrations', holderId));
       const holderStatus = holder.exists() ? String(holder.data()?.status || '') : null;
-      if (!pasSerialHoldIsStale(holder.exists(), holderStatus)) {
-        throw new Error(`Serial ${trimmed} is already used.`);
-      }
+      if (!pasSerialHoldIsStale(holder.exists(), holderStatus)) return;
     }
-    const statusError = pasBankStatusError(trimmed, status, Boolean(options.allowUsed));
-    if (statusError) throw new Error(statusError);
-    if (!pasBankMatchesProduct(data, options.product)) {
-      throw new Error(`Serial ${trimmed} is not allotted to this PAS product.`);
-    }
+    if (pasBankStatusError(trimmed, status, Boolean(options.allowUsed))) return;
+    if (!pasBankMatchesProduct(data, options.product)) return;
     tx.update(ref, {
       status: 'used',
       usedAt: new Date().toISOString(),

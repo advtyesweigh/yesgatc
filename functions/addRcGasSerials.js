@@ -135,25 +135,31 @@ async function addRcGasSerialsCore(db, input) {
       { merge: true },
     );
 
+    const stickerPool = serial => {
+      const key = text(serial).toUpperCase();
+      if (key.startsWith('YJ') || key.startsWith('AS') || key.startsWith('VJ')) return 'pas';
+      return 'gas';
+    };
+
     const allotmentPatch = serial => ({
       serialNumber: serial,
       rcId: rcUid,
       rcCode: rcCode || text(user.rcCode) || null,
       rcCompanyName: companyName || text(user.companyName) || null,
       status: 'allotted',
-      pool: 'gas',
+      pool: stickerPool(serial),
       source: 'rc_settings',
       allottedAt: now,
       updatedAt: now,
     });
 
-    // Tag repaired seats pool=gas so PAS meta / YJ heuristics cannot hide them.
+    // Repair bank membership only — keep truthful pool (PAS-format stays pas).
     for (const serial of repairBank) {
       const id = serialDocId(serial);
       if (!id) continue;
       await db.doc(`${SERIAL_COLLECTION}/${id}`).set(
         {
-          pool: 'gas',
+          pool: stickerPool(serial),
           source: 'rc_settings',
           updatedAt: now,
         },

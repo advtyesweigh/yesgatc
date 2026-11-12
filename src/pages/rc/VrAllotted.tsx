@@ -326,11 +326,43 @@ export const VrAllotted: React.FC = () => {
 
   const rosterUids = useMemo(() => verifiers.map(row => row.uid), [verifiers]);
 
+  // Merge Interweighing-direct seats into Vr Allotted totals + map.
+  const directAllottedByUid = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const row of verifiers) {
+      const serials = uniqueSerials(row.interweighingDirectSerials || []);
+      if (serials.length > 0) map[row.uid] = serials;
+    }
+    return map;
+  }, [verifiers]);
+
+  const directUsedSerials = useMemo(() => {
+    const keys = new Set<string>();
+    for (const serials of Object.values(directAllottedByUid)) {
+      const seatsDirect = computeInterweighingDirectSeats({ allotted: serials, records });
+      for (const serial of seatsDirect.used) keys.add(serial.trim().toUpperCase());
+    }
+    return [...keys];
+  }, [directAllottedByUid, records]);
+
+  const mergedAllottedByUid = useMemo(() => {
+    const out: Record<string, string[]> = { ...seats.allottedByUid };
+    for (const [uid, serials] of Object.entries(directAllottedByUid)) {
+      out[uid] = uniqueSerials([...(out[uid] || []), ...serials]);
+    }
+    return out;
+  }, [directAllottedByUid, seats.allottedByUid]);
+
+  const mergedUsedSerials = useMemo(
+    () => uniqueSerials([...usedSerials, ...directUsedSerials]),
+    [directUsedSerials, usedSerials],
+  );
+
   const scoped = useMemo(
     () =>
       vrAllottedScopedView({
-        allottedByUid: seats.allottedByUid,
-        usedSerials,
+        allottedByUid: mergedAllottedByUid,
+        usedSerials: mergedUsedSerials,
         voidedSerials: seats.voidedSerials,
         reservedSerials: seats.reservedSerials,
         reservedForUids: seats.reservedForUids,
@@ -339,13 +371,13 @@ export const VrAllotted: React.FC = () => {
         statusFilter,
       }),
     [
+      mergedAllottedByUid,
+      mergedUsedSerials,
       rosterUids,
-      seats.allottedByUid,
       seats.reservedForUids,
       seats.reservedSerials,
       seats.voidedSerials,
       statusFilter,
-      usedSerials,
       verifierFilter,
     ],
   );
@@ -408,20 +440,69 @@ export const VrAllotted: React.FC = () => {
   );
 
   const assignmentRows = useMemo(() => {
-    return seats.reservedAssignments.map(row => {
+    const rcRows = seats.reservedAssignments.map(row => {
       const entrySeats = vrAllottedEntrySerials({
         serialStart: row.serialStart,
         serialEnd: row.serialEnd,
-        usedSerials,
+        usedSerials: mergedUsedSerials,
         voidedSerials: seats.voidedSerials,
       });
       return {
         ...row,
         qty: entrySeats.length,
         seats: entrySeats,
+        allotSource: 'rcQuota' as const,
       };
     });
-  }, [seats.reservedAssignments, seats.voidedSerials, usedSerials]);
+
+    const directRows: Array<{
+      invoiceNo: string;
+      verifierUid: string;
+      verifierUids?: string[];
+      serialStart?: string;
+      serialEnd?: string;
+      allottedAt?: string;
+      qty: number;
+      seats: Array<{ serial: string; used: boolean }>;
+      allotSource: 'interweighingDirect';
+      invoiceUrl?: string;
+      invoicePath?: string;
+      invoiceName?: string;
+      invoiceContentType?: string;
+    }> = [];
+
+    for (const verifier of verifiers) {
+      const batches = normalizeInterweighingDirectBatches(verifier.interweighingDirectBatches);
+      for (const batch of batches) {
+        const entrySeats = vrAllottedEntrySerials({
+          serialStart: batch.serialStart,
+          serialEnd: batch.serialEnd,
+          usedSerials: mergedUsedSerials,
+          voidedSerials: seats.voidedSerials,
+        });
+        const invoiceNo =
+          (batch.invoiceNo || '').trim()
+          || `IW-${verifier.uid.slice(0, 6)}-${batch.serialStart}-${batch.serialEnd}`;
+        directRows.push({
+          invoiceNo,
+          verifierUid: verifier.uid,
+          verifierUids: [verifier.uid],
+          serialStart: batch.serialStart,
+          serialEnd: batch.serialEnd,
+          allottedAt: batch.allottedAt,
+          qty: entrySeats.length || batch.qty || 0,
+          seats: entrySeats,
+          allotSource: 'interweighingDirect',
+          invoiceUrl: batch.invoiceUrl,
+          invoicePath: batch.invoicePath,
+          invoiceName: batch.invoiceName,
+          invoiceContentType: batch.invoiceContentType,
+        });
+      }
+    }
+
+    return [...rcRows, ...directRows];
+  }, [mergedUsedSerials, seats.reservedAssignments, seats.voidedSerials, verifiers]);
 
   const visibleEntries = useMemo(
     () =>
@@ -956,7 +1037,10 @@ export const VrAllotted: React.FC = () => {
                     </div>
                     <div>
                       <span className="vr-allotted-entry__label">Invoice no</span>
-                      <span className="vr-allotted-entry__value text-mono">{row.invoiceNo}</span>
+                      <span className="vr-allotted-entry__value text-mono">
+                        {row.invoiceNo}
+                        {row.allotSource === 'interweighingDirect' ? ' · Interweigh' : ''}
+                      </span>
                     </div>
                     <div>
                       <span className="vr-allotted-entry__label">Start no</span>
@@ -995,14 +1079,16 @@ export const VrAllotted: React.FC = () => {
                     >
                       <Eye size={16} strokeWidth={2.2} />
                     </button>
-                    <button
-                      type="button"
-                      className="vr-allotted-entry__icon"
-                      aria-label={`Edit allotment ${row.invoiceNo}`}
-                      onClick={() => openEdit(row)}
-                    >
-                      <Pencil size={16} strokeWidth={2.2} />
-                    </button>
+                    {row.allotSource !== 'interweighingDirect' ? (
+                      <button
+                        type="button"
+                        className="vr-allotted-entry__icon"
+                        aria-label={`Edit allotment ${row.invoiceNo}`}
+                        onClick={() => openEdit(row)}
+                      >
+                        <Pencil size={16} strokeWidth={2.2} />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {expanded ? (

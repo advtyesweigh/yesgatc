@@ -19,7 +19,7 @@ type VerificationJobKindPickerProps = {
   ovBalanceQty: number | null;
   ovRemainingCount?: number;
   pendingSerials: string[];
-  /** Catalogue has PAS products — OV can start without GAS seats. */
+  /** @deprecated PAS no longer bypasses Balance gate. */
   hasPasProducts?: boolean;
   /** Verifier session — kinds filtered by allowedJobKinds. */
   verifierMode?: boolean;
@@ -65,32 +65,22 @@ const KINDS: {
 
 export function VerificationJobKindPicker({
   ovBalanceQty,
-  ovRemainingCount,
-  pendingSerials,
-  hasPasProducts = false,
+  ovRemainingCount: _ovRemainingCount,
+  pendingSerials: _pendingSerials,
+  hasPasProducts: _hasPasProducts = false,
   verifierMode = false,
   allowedJobKinds,
   onSelect,
   onClose,
 }: VerificationJobKindPickerProps) {
+  void _ovRemainingCount;
+  void _pendingSerials;
+  void _hasPasProducts;
   const skipHistoryBackRef = useRef(false);
-  const seats = useMemo(
-    () =>
-      [...pendingSerials].sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
-      ),
-    [pendingSerials],
-  );
-  const qtyBlocked = verifierMode
-    ? seats.length === 0 && !hasPasProducts
-    : ovBalanceQty != null && ovBalanceQty <= 0;
-  const serialBlocked = ovRemainingCount === 0 || (verifierMode && seats.length === 0);
-  const ovBlocked = qtyBlocked || (serialBlocked && !hasPasProducts);
-  const balanceLabel = verifierMode
-    ? String(seats.length)
-    : ovBalanceQty == null
-      ? '—'
-      : String(Math.max(0, ovBalanceQty));
+  // Balance qty only — no allotted-serial list gate. Blocks OV and RV when 0.
+  const balanceBlocked = ovBalanceQty != null && ovBalanceQty <= 0;
+  const balanceLabel =
+    ovBalanceQty == null ? '—' : String(Math.max(0, ovBalanceQty));
 
   const visibleKinds = useMemo(() => {
     const allowed = new Set(verificationJobKindsForActor(verifierMode, allowedJobKinds));
@@ -144,7 +134,7 @@ export function VerificationJobKindPicker({
       <div className="verification-job-kind-page-body">
         <div className="verification-job-kind-page-list">
           {visibleKinds.map(kind => {
-            const disabled = kind.ov && ovBlocked;
+            const disabled = balanceBlocked;
             const Icon = kind.Icon;
             return (
               <button
@@ -189,14 +179,10 @@ export function VerificationJobKindPicker({
           ) : null}
         </div>
 
-        {verifierMode && ovBlocked && showsOv && showsRv ? (
-          <p className="verification-job-kind-hint">No serials allotted to you. RV Customer still available.</p>
-        ) : verifierMode && ovBlocked && showsOv ? (
-          <p className="verification-job-kind-hint">No serials allotted to you.</p>
-        ) : !verifierMode && qtyBlocked ? (
-          <p className="verification-job-kind-hint">OV quota is 0. RV Customer still available.</p>
-        ) : !verifierMode && serialBlocked && !hasPasProducts ? (
-          <p className="verification-job-kind-hint">No allotted serials left. RV Customer still available.</p>
+        {balanceBlocked && (showsOv || showsRv) ? (
+          <p className="verification-job-kind-hint">
+            Balance is 0. Cannot start OV or RV until quota is available.
+          </p>
         ) : null}
       </div>
     </div>,

@@ -464,35 +464,9 @@ service cloud.firestore {
                ]);
       }
 
-      // GAS OV stickers must be in parent RC yesoneVerifierAllottedByUid[uid].
-      // PAS YJ and empty/RV serials stay unrestricted here.
-      function serialAllottedToVerifier(serial) {
-        let byUid = get(/databases/$(database)/documents/users/$(vctRcId()))
-          .data.get('yesoneVerifierAllottedByUid', {});
-        let mine = byUid is map ? byUid.get(request.auth.uid, []) : [];
-        return mine is list && mine.hasAny([serial]);
-      }
-
-      function serialInVerifierDirectBank(serial) {
-        let mine = get(/databases/$(database)/documents/users/$(request.auth.uid))
-          .data.get('interweighingDirectSerials', []);
-        return mine is list && mine.hasAny([serial]);
-      }
-
-      function isInterweighingDirectSource(data) {
-        return data.get('serialSource', '') == 'interweighingDirect';
-      }
-
+      // Manual serial entry — no allotted-bank / PAS-bank membership gate.
       function verifierMayWriteVerificationSerial(data) {
-        let serial = data.get('serialNumber', '');
-        return !(serial is string)
-          || serial.size() == 0
-          || data.get('verificationType', '') != 'OV'
-          || isPasStickerSerial(serial)
-          || !isGasStickerSerial(serial)
-          || serialAllottedToVerifier(serial)
-          || serialInVerifierDirectBank(serial)
-          || isInterweighingDirectSource(data);
+        return true;
       }
 
       allow read: if isSuperAdmin();

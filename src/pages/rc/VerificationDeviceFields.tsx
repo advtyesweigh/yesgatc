@@ -34,15 +34,7 @@ import {
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
 import { type OvQuotaGate } from '../../lib/ovQuotaGate';
-import { pasBankOptionsForJob, productUsesPasSerials } from '../../lib/pasSerialBank';
-import { useRcScope } from '../../lib/roleScope';
-import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
-import {
-  InterweighingDirectSerialField,
-  SerialBankSourceToggle,
-  type SerialBankSourceTab,
-} from '../../components/SerialBankSourceToggle';
-import { gasAllottedChoices, serialInChoiceList, showsGasAllottedSerialGrid } from '../../lib/serialEntryPool';
+import { productUsesPasSerials } from '../../lib/pasSerialBank';
 import { usePasSerialHint } from '../../hooks/usePasSerialHint';
 
 const VerificationImageColumnHead: React.FC<{
@@ -213,7 +205,6 @@ function DeviceSerialField({
   pasManual?: boolean;
   product?: Product | null;
 }) {
-  const { rcUid } = useRcScope();
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
   const lockThisRow =
@@ -221,18 +212,10 @@ function DeviceSerialField({
     (rowSerial === held || (!rowSerial && devices[0]?.localId === row.localId));
   const disabled = locked || !row.included;
   const typePas = pasManual || productUsesPasSerials(product);
-  const unknownProduct = Boolean(row.productId.trim()) && !product;
-  const gasSelect = showsGasAllottedSerialGrid(product, isRv ? 'RV' : 'OV') && Boolean(ovQuota);
-  const pasHint = usePasSerialHint(
-    row.serialNumber,
-    product,
-    typePas && !disabled,
-    {
-      ...pasBankOptionsForJob(isRv ? 'RV' : 'OV'),
-      ownRecordId,
-      rcId: rcUid,
-    },
-  );
+  void ovQuota;
+  void ownRecordId;
+  void isRv;
+  const pasHint = usePasSerialHint(row.serialNumber, product, !disabled);
 
   if (lockThisRow) {
     return (
@@ -248,89 +231,26 @@ function DeviceSerialField({
     );
   }
 
-  if (isRv || typePas || unknownProduct || !gasSelect) {
-    return (
-      <>
-        <input
-          id={id}
-          type="text"
-          inputMode="text"
-          className={className}
-          placeholder={typePas ? 'Type serial from the plate' : placeholder}
-          value={row.serialNumber}
-          onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-          disabled={disabled}
-          autoComplete="off"
-          enterKeyHint="next"
-        />
-        {typePas && pasHint ? (
-          <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">
-            {pasHint.text}
-          </p>
-        ) : null}
-      </>
-    );
-  }
-
-  const otherTaken = devices
-    .filter(device => device.localId !== row.localId && device.included)
-    .map(device => device.serialNumber);
-  const choices = gasAllottedChoices({
-    remaining: ovQuota?.remaining ?? [],
-    allotments: ovQuota?.remainingAllotments,
-    heldSerials: ovQuota?.heldSerials,
-    otherTaken,
-    product,
-    fallbackProduct: { productId: row.productId, productName: row.productName },
-  });
-  const allowDirect = Boolean(ovQuota?.allowInterweighingDirect);
-  const source: SerialBankSourceTab =
-    row.serialSource === 'interweighingDirect' ? 'interweighingDirect' : 'rcYesone';
-  const setSource = (next: SerialBankSourceTab) => {
-    if (next === 'interweighingDirect') {
-      onDeviceChange(row.localId, { serialSource: 'interweighingDirect' });
-      return;
-    }
-    const keep = serialInChoiceList(row.serialNumber, choices);
-    onDeviceChange(row.localId, {
-      serialSource: 'rcYesone',
-      serialNumber: keep ? row.serialNumber : '',
-    });
-  };
-
   return (
-    <div className="device-serial-source">
-      {allowDirect ? (
-        <SerialBankSourceToggle value={source} onChange={setSource} disabled={disabled} />
+    <>
+      <input
+        id={id}
+        type="text"
+        inputMode="text"
+        className={className}
+        placeholder={typePas ? 'Type serial from the plate' : placeholder || 'Type serial from the plate'}
+        value={row.serialNumber}
+        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+        disabled={disabled}
+        autoComplete="off"
+        enterKeyHint="next"
+      />
+      {pasHint ? (
+        <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">
+          {pasHint.text}
+        </p>
       ) : null}
-      {allowDirect && source === 'interweighingDirect' ? (
-        <InterweighingDirectSerialField
-          id={id}
-          className={className}
-          value={row.serialNumber}
-          choices={ovQuota?.directRemaining ?? []}
-          disabled={disabled}
-          onChange={serial =>
-            onDeviceChange(row.localId, {
-              serialNumber: serial,
-              serialSource: 'interweighingDirect',
-            })
-          }
-        />
-      ) : (
-        <GasAllottedSerialSearch
-          id={id}
-          className={`${className} gas-serial-search-input`}
-          choices={choices}
-          value={serialInChoiceList(row.serialNumber, choices) ? row.serialNumber : ''}
-          disabled={disabled}
-          scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
-          onChange={serial =>
-            onDeviceChange(row.localId, { serialNumber: serial, serialSource: 'rcYesone' })
-          }
-        />
-      )}
-    </div>
+    </>
   );
 }
 

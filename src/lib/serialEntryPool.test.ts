@@ -60,28 +60,18 @@ const allotments = [
 ];
 
 describe('serialEntryMode', () => {
-  it('selects GAS list vs PAS type from pasPreAllotted', () => {
-    assert.equal(serialEntryMode(gasScale), 'gas-select');
-    assert.equal(serialEntryMode(pasScale), 'pas-type');
-    assert.equal(serialEntryMode(null), 'gas-select');
+  it('always manual for PAS and GAS', () => {
+    assert.equal(serialEntryMode(gasScale), 'manual');
+    assert.equal(serialEntryMode(pasScale), 'manual');
+    assert.equal(serialEntryMode(null), 'manual');
   });
 });
 
 describe('showsGasAllottedSerialGrid', () => {
-  it('PAS hides the allotted sticker grid', () => {
+  it('never shows allotted sticker grid', () => {
     assert.equal(showsGasAllottedSerialGrid(pasScale, 'OV'), false);
-    assert.equal(showsGasAllottedSerialGrid(pasScale, 'RV'), false);
-  });
-
-  it('GAS OV still lists allotted seats', () => {
-    assert.equal(showsGasAllottedSerialGrid(gasScale, 'OV'), true);
-  });
-
-  it('GAS RV types existing serial — no unused-seat grid', () => {
+    assert.equal(showsGasAllottedSerialGrid(gasScale, 'OV'), false);
     assert.equal(showsGasAllottedSerialGrid(gasScale, 'RV'), false);
-  });
-
-  it('missing product does not dump remaining seats', () => {
     assert.equal(showsGasAllottedSerialGrid(null, 'OV'), false);
   });
 });
@@ -112,7 +102,7 @@ describe('gasAllottedChoices', () => {
     assert.equal(choices.includes('YJ00001'), false);
   });
 
-  it('keeps Settings-bank YJ/VJ seats that are not PAS-pool allotments', () => {
+  it('drops Settings-bank YJ/VJ even when tagged pool=gas', () => {
     const choices = gasAllottedChoices({
       remaining: ['G0001', 'YJ00498', 'VJ00151'],
       allotments: [
@@ -122,7 +112,7 @@ describe('gasAllottedChoices', () => {
       ],
       product: gasScale,
     });
-    assert.deepEqual(choices.slice().sort(), ['G0001', 'VJ00151', 'YJ00498']);
+    assert.deepEqual(choices, ['G0001']);
   });
 
   it('does not add a typed current serial that is not allotted', () => {
@@ -441,9 +431,9 @@ describe('gasAllottedChoices', () => {
     );
   });
 
-  it('empty copy is only for empty unused allotted remaining', () => {
-    assert.equal(gasAllottedEmptyLabel(true), 'None allotted to you');
-    assert.equal(gasAllottedEmptyProductHint(true), 'No serials allotted to you for this product.');
+  it('empty copy points at manual serial entry', () => {
+    assert.equal(gasAllottedEmptyLabel(true), 'Type the serial from the plate');
+    assert.equal(gasAllottedEmptyProductHint(true), 'Type the serial from the plate.');
     assert.deepEqual(
       gasAllottedChoices({
         remaining: [],
@@ -485,143 +475,66 @@ describe('filterGasAllottedChoices', () => {
 });
 
 describe('validateSerialForProductPool', () => {
-  const gasChoices = ['G0001', 'G0002'];
-
-  it('GAS OV must pick an allotted unused seat', () => {
+  it('accepts any non-empty typed serial for PAS and GAS', () => {
     assert.equal(
       validateSerialForProductPool({
-        mode: 'gas-select',
+        mode: 'manual',
         verificationType: 'OV',
-        serial: 'G0001',
-        gasChoices,
+        serial: 'INVENTED',
+        gasChoices: [],
       }),
       null,
     );
     assert.equal(
       validateSerialForProductPool({
-        mode: 'gas-select',
-        verificationType: 'OV',
-        serial: 'INVENTED',
-        gasChoices,
-      }),
-      'Serial INVENTED is not in the allotted list for this product.',
-    );
-  });
-
-  it('rejects invented serials even when parent RC has unused seats', () => {
-    assert.equal(
-      validateSerialForProductPool({
-        mode: 'gas-select',
-        verificationType: 'OV',
-        serial: 'INVENTED',
-        gasChoices: ['X00423', 'G0541'],
-      }),
-      'Serial INVENTED is not in the allotted list for this product.',
-    );
-  });
-
-  it('GAS OV empty list cannot invent a serial', () => {
-    assert.equal(
-      validateSerialForProductPool({
-        mode: 'gas-select',
-        verificationType: 'OV',
-        serial: 'G0001',
-        gasChoices: [],
-      }),
-      'No unused allotted serials for this product.',
-    );
-  });
-
-  it('verifier empty list is allotted-to-you, not RC pool empty', () => {
-    assert.equal(
-      validateSerialForProductPool({
-        mode: 'gas-select',
-        verificationType: 'OV',
-        serial: 'X00423',
-        gasChoices: [],
-        scopedToVerifier: true,
-      }),
-      'No serials allotted to you for this product.',
-    );
-  });
-
-  it('direct source skips RC allotted-to-uid list', () => {
-    assert.equal(
-      validateSerialForProductPool({
-        mode: 'gas-select',
-        verificationType: 'OV',
-        serial: 'IW00001',
-        gasChoices: [],
-        scopedToVerifier: true,
-        serialSource: 'interweighingDirect',
-      }),
-      null,
-    );
-  });
-
-  it('PAS accepts typed serial here; bank check is async', () => {
-    assert.equal(
-      validateSerialForProductPool({
-        mode: 'pas-type',
+        mode: 'manual',
         verificationType: 'OV',
         serial: 'YJ00001',
-        gasChoices,
+        gasChoices: ['G0001'],
       }),
       null,
     );
     assert.equal(
       validateSerialForProductPool({
-        mode: 'pas-type',
-        verificationType: 'OV',
-        serial: 'NOT-IN-GAS-LIST',
-        gasChoices,
+        mode: 'manual',
+        verificationType: 'RV',
+        serial: 'OLD-USED-SERIAL',
+        gasChoices: [],
       }),
       null,
     );
   });
 
-  it('RV GAS types existing serial — not unused-seat select', () => {
+  it('requires a serial', () => {
     assert.equal(
       validateSerialForProductPool({
-        mode: 'gas-select',
-        verificationType: 'RV',
-        serial: 'OLD-USED-SERIAL',
-        gasChoices,
+        mode: 'manual',
+        verificationType: 'OV',
+        serial: '  ',
+        gasChoices: [],
       }),
-      null,
+      'Serial number is required.',
     );
   });
 });
 
 describe('applyOcrSerialToPool', () => {
-  it('GAS OCR only fills a listed allotted seat', () => {
+  it('fills typed OCR serial without allotted-list gate', () => {
     assert.equal(
       applyOcrSerialToPool({
-        mode: 'gas-select',
-        ocrSerial: 'G0002',
-        allottedMatch: 'G0002',
-        gasChoices: ['G0001', 'G0002'],
-      }),
-      'G0002',
-    );
-    assert.equal(
-      applyOcrSerialToPool({
-        mode: 'gas-select',
+        mode: 'manual',
         ocrSerial: 'FAKE99',
         allottedMatch: null,
         gasChoices: ['G0001', 'G0002'],
       }),
-      null,
+      'FAKE99',
     );
-  });
-
-  it('PAS OCR fills typed serial without using GAS list', () => {
     assert.equal(
       applyOcrSerialToPool({
-        mode: 'pas-type',
+        mode: 'manual',
         ocrSerial: 'YJ00001',
-        allottedMatch: 'G0001',
-        gasChoices: ['G0001'],
+        allottedMatch: null,
+        gasChoices: [],
       }),
       'YJ00001',
     );

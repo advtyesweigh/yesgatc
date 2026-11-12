@@ -83,7 +83,8 @@ function parseSerialParts(value: string): { prefix: string; width: number; n: bi
 
 /** PAS stickers (Yesone number bank). Never G/X GAS seats. */
 export function isPasStickerSerial(serial: string): boolean {
-  return serial.trim().toUpperCase().startsWith('YJ');
+  const key = serial.trim().toUpperCase();
+  return key.startsWith('YJ') || key.startsWith('AS') || key.startsWith('VJ');
 }
 
 /** Interweighing factory GATC stickers (Y10315–Y11000, YZ01420–YZ01500). */
@@ -321,10 +322,11 @@ export function allotmentUsesPasProduct(
   pasProducts: readonly Product[],
 ): boolean {
   const pool = String(row.pool || '').trim().toLowerCase();
-  // Settings / GAS bank seats — any format (incl. YJ) stays off the PAS block list.
+  // PAS-format stickers (YJ/AS/VJ) always PAS — pool=gas Settings tag must not resurrect them on GAS boards.
+  if (isPasStickerSerial(row.serialNumber)) return true;
+  // Settings / GAS bank seats for non-PAS formats stay off the PAS block list.
   if (pool === 'gas') return false;
   if (isGasStickerSerial(row.serialNumber) || isFactoryGatcSticker(row.serialNumber)) return false;
-  if (isPasStickerSerial(row.serialNumber)) return true;
   if (pool === 'pas') return true;
   if (pasProducts.length === 0) return false;
   const productId = String(row.productId || '').trim();
