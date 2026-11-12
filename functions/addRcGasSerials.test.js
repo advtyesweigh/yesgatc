@@ -40,7 +40,7 @@ test('parseGasStickerSerials keeps any non-empty token', () => {
   });
 });
 
-test('addRcGasSerialsCore writes YJ/VJ into bank + allotments and bumps ovQuota', async () => {
+test('addRcGasSerialsCore writes YJ/VJ into bank + allotments without bumping ovQuota', async () => {
   const db = createMemoryDb({
     'users/rc1': {
       role: 'rc_admin',
@@ -61,8 +61,10 @@ test('addRcGasSerialsCore writes YJ/VJ into bank + allotments and bumps ovQuota'
   assert.deepEqual(result.added, ['G0002', 'X00999', 'YJ00498', 'VJ00151']);
   assert.deepEqual(result.alreadyPresent, ['G0001']);
   assert.deepEqual(result.invalid, []);
-  assert.equal(result.ovQuotaDelta, 4);
-  assert.equal(result.ovQuota, 14);
+  assert.equal(result.ovQuotaDelta, 0);
+  assert.equal(result.ovQuota, 10);
+  assert.equal(db._store['users/rc1'].ovQuota, 10);
+  assert.equal(db._store['users/rc1'].ovQuotaSource, undefined);
   assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('YJ00498'));
   assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('VJ00151'));
   assert.equal(db._store['serialAllotments/YJ00498'].rcId, 'rc1');

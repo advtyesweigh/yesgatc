@@ -52,9 +52,6 @@ export function SerialSettingsPanel() {
       const parts: string[] = [];
       if (result.added.length > 0) {
         parts.push(`Added ${result.added.length} GAS seat${result.added.length === 1 ? '' : 's'}.`);
-        if (result.ovQuotaDelta > 0) {
-          parts.push(`ovQuota +${result.ovQuotaDelta} → ${result.ovQuota}.`);
-        }
       }
       if (result.alreadyPresent.length > 0) {
         parts.push(`Already held: ${result.alreadyPresent.slice(0, 6).join(', ')}.`);

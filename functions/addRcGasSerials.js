@@ -57,10 +57,8 @@ function parseQuotaNumber(value) {
 }
 
 /**
- * Choice: YesOne inbound writes serials without auto-bumping ovQuota (separate
- * rcOvQuota event). Invoice Allotment only assigns seats already in the bank.
- * Settings paste adds missing stickers to the bank — bump ovQuota by newly
- * added count so Balance (allotted−used) stays consistent with stamp seats.
+ * Settings → Serial → Add: append stickers to GAS stamp bank only.
+ * Does NOT touch ovQuota / ovQuotaUsed — Balance stays YesOne/admin accounting.
  */
 async function addRcGasSerialsCore(db, input) {
   const rcUid = text(input.rcUid);
@@ -93,7 +91,7 @@ async function addRcGasSerialsCore(db, input) {
 
   const alreadyPresent = [];
   const conflicts = [];
-  /** New stickers → serialAllotments + bank + ovQuota bump. */
+  /** New stickers → serialAllotments + bank (no ovQuota change). */
   const toCreate = [];
   /** Already in serialAllotments for this RC but missing from yesoneAllottedSerials. */
   const repairBank = [];
@@ -126,21 +124,16 @@ async function addRcGasSerialsCore(db, input) {
     ...uniqueList(user.yesoneAllottedSerials),
     ...bankAdds,
   ]);
-  const ovQuotaDelta = toCreate.length;
-  const nextOvQuota = parseQuotaNumber(user.ovQuota) + ovQuotaDelta;
   const wrote = bankAdds.length > 0 || toCreate.length > 0;
 
   if (wrote) {
-    const userPatch = {
-      yesoneAllottedSerials: nextBank,
-      updatedAt: now,
-    };
-    if (ovQuotaDelta > 0) {
-      userPatch.ovQuota = nextOvQuota;
-      userPatch.ovQuotaUpdatedAt = now;
-      userPatch.ovQuotaSource = 'rc_settings';
-    }
-    await userRef.set(userPatch, { merge: true });
+    await userRef.set(
+      {
+        yesoneAllottedSerials: nextBank,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
 
     const allotmentPatch = serial => ({
       serialNumber: serial,
@@ -191,8 +184,8 @@ async function addRcGasSerialsCore(db, input) {
     alreadyPresent: uniqueList(alreadyPresent),
     invalid,
     conflicts: uniqueList(conflicts),
-    ovQuota: ovQuotaDelta > 0 ? nextOvQuota : parseQuotaNumber(user.ovQuota),
-    ovQuotaDelta,
+    ovQuota: parseQuotaNumber(user.ovQuota),
+    ovQuotaDelta: 0,
   };
 }
 

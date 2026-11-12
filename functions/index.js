@@ -505,8 +505,8 @@ exports.readSerialPlate = onCall(
 );
 
 /**
- * RC Settings → Serial: paste any serial tokens into unused GAS bank
- * (yesoneAllottedSerials + serialAllotments) and bump ovQuota by new count.
+ * RC Settings → Serial: paste serial tokens into unused GAS bank
+ * (yesoneAllottedSerials + serialAllotments). Does not change ovQuota.
  * Admin SDK — client rules lock those fields.
  */
 exports.addRcGasSerials = onCall(
