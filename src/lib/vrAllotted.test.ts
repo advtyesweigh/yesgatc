@@ -388,7 +388,7 @@ describe('verificationStageQuotaTotals', () => {
     );
   });
 
-  it('drops PAS / YJ from allotted and used', () => {
+  it('keeps Settings-bank YJ seats in allotted and used', () => {
     assert.deepEqual(
       verificationStageQuotaTotals({
         allottedByUid: { rasheed: ['X00090', 'YJ01001'] },
@@ -396,7 +396,8 @@ describe('verificationStageQuotaTotals', () => {
         reservedSerials: ['YJ01164'],
         actor: { isRcAdmin: true, actorUid: 'meezan' },
       }),
-      { allotted: 1, used: 1, unused: 0 },
+      // reserved YJ01164 unused + 2 used seats
+      { allotted: 3, used: 2, unused: 1 },
     );
   });
 

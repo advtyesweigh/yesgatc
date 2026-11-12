@@ -39,6 +39,22 @@ describe('used allotment exclusion from Balance / chips', () => {
     assert.ok(seats.usedSerials.includes('G0585'));
   });
 
+  it('Settings-bank YJ/VJ stay in remaining when not PAS-blocked', () => {
+    const seats = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan',
+      ovQuota: '56',
+      ovQuotaUsed: 0,
+      recordsAreRcWide: true,
+      storedSerials: ['YJ00498', 'VJ00151'],
+      allotSerials: ['YJ00498', 'VJ00151'],
+      voidedSerials: [],
+      records: [] as SiteCalibration[],
+      pasSerials: [],
+    });
+    assert.deepEqual(seats.remaining.sort(), ['VJ00151', 'YJ00498']);
+  });
+
   it('admin table: stale YesOne used=allotted does not wipe remaining seats', () => {
     const used = Array.from({ length: 587 }, (_, i) => `X${String(i + 1).padStart(5, '0')}`);
     const remaining = Array.from({ length: 157 }, (_, i) => `X${String(1000 + i).padStart(5, '0')}`);

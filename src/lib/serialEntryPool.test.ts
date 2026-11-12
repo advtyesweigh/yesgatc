@@ -112,6 +112,19 @@ describe('gasAllottedChoices', () => {
     assert.equal(choices.includes('YJ00001'), false);
   });
 
+  it('keeps Settings-bank YJ/VJ seats that are not PAS-pool allotments', () => {
+    const choices = gasAllottedChoices({
+      remaining: ['G0001', 'YJ00498', 'VJ00151'],
+      allotments: [
+        { serialNumber: 'G0001', productId: 'gas-10', sku: 'GS10BAY', pool: 'gas' },
+        { serialNumber: 'YJ00498', pool: 'gas' },
+        { serialNumber: 'VJ00151', pool: 'gas' },
+      ],
+      product: gasScale,
+    });
+    assert.deepEqual(choices.slice().sort(), ['G0001', 'VJ00151', 'YJ00498']);
+  });
+
   it('does not add a typed current serial that is not allotted', () => {
     assert.deepEqual(
       gasAllottedChoices({

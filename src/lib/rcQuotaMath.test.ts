@@ -53,10 +53,17 @@ describe('resolveRcQuotaUsedQty', () => {
 });
 
 describe('PAS exclusion', () => {
-  it('drops PAS serials from GAS lists', () => {
+  it('drops only explicitly blocked PAS serials from GAS lists', () => {
     assert.deepEqual(
-      excludePasQuotaSerials(['G0001', 'YJ01001', 'G0002'], ['YJ01001']),
-      ['G0001', 'G0002'],
+      excludePasQuotaSerials(['G0001', 'YJ01001', 'G0002', 'VJ00151'], ['YJ01001']),
+      ['G0001', 'G0002', 'VJ00151'],
+    );
+  });
+
+  it('keeps Settings-bank YJ/VJ when not on the PAS block list', () => {
+    assert.deepEqual(
+      excludePasQuotaSerials(['YJ00498', 'VJ00151', 'G0540'], []),
+      ['YJ00498', 'VJ00151', 'G0540'],
     );
   });
 

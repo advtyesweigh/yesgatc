@@ -1769,6 +1769,21 @@ button.admin-setting-serial-seat:disabled {
   padding: 0.75rem;
 }
 
+.serial-settings-panel {
+  padding: 0.75rem;
+}
+
+.serial-settings-hint {
+  margin: 0 0 0.55rem;
+}
+
+.serial-settings-textarea {
+  width: 100%;
+  min-height: 7.5rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 .rv-fees-list {
   gap: 0.5rem;
 }

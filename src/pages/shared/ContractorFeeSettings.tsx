@@ -19,6 +19,7 @@ import {
 } from '../../lib/contractorFeeSettings';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { RvFeesPanel } from './RvFeesPanel';
+import { SerialSettingsPanel } from './SerialSettingsPanel';
 
 function formatFeeMoney(amount: number): string {
   if (Number.isInteger(amount)) return formatRcFeeAmount(amount);
@@ -204,7 +205,7 @@ export function ContractorFeePanel() {
 export const ContractorFeeSettings: React.FC = () => {
   const { user } = useAuth();
   const isRc = user?.role === 'rc_admin';
-  const [tab, setTab] = useState<'contractor' | 'rv'>('contractor');
+  const [tab, setTab] = useState<'contractor' | 'rv' | 'serial'>('contractor');
 
   return (
     <div className={`fade-in page-content admin-setting-page${isRc && tab === 'rv' ? ' admin-setting-page--fit' : ''}`}>
@@ -228,9 +229,24 @@ export const ContractorFeeSettings: React.FC = () => {
           >
             RV fees
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'serial'}
+            className={`admin-setting-tab${tab === 'serial' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('serial')}
+          >
+            Serial
+          </button>
         </div>
       ) : null}
-      {isRc && tab === 'rv' ? <RvFeesPanel /> : <ContractorFeePanel />}
+      {isRc && tab === 'rv' ? (
+        <RvFeesPanel />
+      ) : isRc && tab === 'serial' ? (
+        <SerialSettingsPanel />
+      ) : (
+        <ContractorFeePanel />
+      )}
     </div>
   );
 };

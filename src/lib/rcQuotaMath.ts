@@ -1,4 +1,4 @@
-import { isFactoryGatcSticker, isGasStickerSerial, isPasStickerSerial } from './pasSerialBankMatch.ts';
+import { isFactoryGatcSticker, isGasStickerSerial } from './pasSerialBankMatch.ts';
 
 /** GAS RC quota qty. PAS seats never consume or inflate these numbers. */
 
@@ -48,8 +48,9 @@ export function excludePasQuotaSerials(
   return serials.filter(serial => {
     const key = serial.trim().toUpperCase();
     if (!key) return false;
-    if (isPasStickerSerial(key)) return false;
+    // G/X + factory always keep (never strip because a PAS range exists).
     if (isGasStickerSerial(key) || isFactoryGatcSticker(key)) return true;
+    // Settings bank may hold any format (YJ/VJ/numeric). Drop only explicit PAS block list.
     return !blocked.has(key);
   });
 }

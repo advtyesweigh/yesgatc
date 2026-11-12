@@ -34,8 +34,19 @@ export function usePasBlockedSerials(
     );
   }, []);
 
-  return useMemo(
-    () => mergePasBlockedSerials(pasSerialsFromAllotments(allotmentRows, products), metaSerials),
-    [allotmentRows, metaSerials, products],
-  );
+  return useMemo(() => {
+    const blocked = mergePasBlockedSerials(
+      pasSerialsFromAllotments(allotmentRows, products),
+      metaSerials,
+    );
+    // Settings-added GAS seats (any format) must stay stampable even if YJ overlaps PAS meta.
+    const gasSeats = new Set(
+      allotmentRows
+        .filter(row => String(row.pool || '').trim().toLowerCase() === 'gas')
+        .map(row => row.serialNumber.trim().toUpperCase())
+        .filter(Boolean),
+    );
+    if (gasSeats.size === 0) return blocked;
+    return blocked.filter(serial => !gasSeats.has(serial.trim().toUpperCase()));
+  }, [allotmentRows, metaSerials, products]);
 }

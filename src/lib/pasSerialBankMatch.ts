@@ -303,9 +303,12 @@ export function allotmentUsesPasProduct(
   row: PasAllotmentIdentity,
   pasProducts: readonly Product[],
 ): boolean {
+  const pool = String(row.pool || '').trim().toLowerCase();
+  // Settings / GAS bank seats — any format (incl. YJ) stays off the PAS block list.
+  if (pool === 'gas') return false;
   if (isGasStickerSerial(row.serialNumber) || isFactoryGatcSticker(row.serialNumber)) return false;
   if (isPasStickerSerial(row.serialNumber)) return true;
-  if (String(row.pool || '').trim().toLowerCase() === 'pas') return true;
+  if (pool === 'pas') return true;
   if (pasProducts.length === 0) return false;
   const productId = String(row.productId || '').trim();
   if (productId && pasProducts.some(product => product.id === productId)) return true;

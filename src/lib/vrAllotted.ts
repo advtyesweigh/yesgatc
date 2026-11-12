@@ -162,7 +162,7 @@ function gasAllottedByUid(map: Record<string, string[]>): Record<string, string[
 
 /**
  * VERIFICATION STAGES Allotted / Used / Balance.
- * Same bank as Vr Allotted tiles (used + unused reserved). PAS / YJ dropped.
+ * Same bank as Vr Allotted tiles (used + unused reserved). Explicit PAS block only.
  * Verifier = that uid only. VCT unused = picker leftover (`vctUnusedCount`).
  */
 export function verificationStageQuotaTotals(input: {

@@ -103,7 +103,11 @@ export function pasSerialsFromAllotments(
   if (pasProducts.length === 0) {
     return pasSerialsOnly(
       rows
-        .filter(row => String(row.pool || '').trim().toLowerCase() === 'pas' || isPasStickerSerial(row.serialNumber))
+        .filter(row => {
+          const pool = String(row.pool || '').trim().toLowerCase();
+          if (pool === 'gas') return false;
+          return pool === 'pas' || isPasStickerSerial(row.serialNumber);
+        })
         .map(row => row.serialNumber),
     );
   }

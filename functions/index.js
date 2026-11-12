@@ -49,6 +49,7 @@ const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
 const { yesoneInboundHttpHandler } = require('./yesoneInbound');
 const { readSerialPlateHandler } = require('./readSerialPlate');
+const { addRcGasSerialsHandler } = require('./addRcGasSerials');
 const {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
@@ -501,6 +502,21 @@ exports.readSerialPlate = onCall(
     memory: '512MiB',
   },
   async request => readSerialPlateHandler(request, getCallerRole, process.env.GEMINI_API_KEY || ''),
+);
+
+/**
+ * RC Settings → Serial: paste any serial tokens into unused GAS bank
+ * (yesoneAllottedSerials + serialAllotments) and bump ovQuota by new count.
+ * Admin SDK — client rules lock those fields.
+ */
+exports.addRcGasSerials = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async request => addRcGasSerialsHandler(request, getCallerRole, adminDb()),
 );
 
 /**

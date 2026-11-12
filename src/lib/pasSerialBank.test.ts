@@ -279,6 +279,17 @@ describe('PAS remaining sticker exclusion', () => {
     );
   });
 
+  it('treats Settings pool=gas YJ as GAS, not PAS', () => {
+    assert.equal(
+      allotmentUsesPasProduct({ serialNumber: 'YJ00498', pool: 'gas' }, [scale10]),
+      false,
+    );
+    assert.equal(
+      allotmentUsesPasProduct({ serialNumber: 'VJ00151', pool: 'gas' }, [scale10]),
+      false,
+    );
+  });
+
   it('treats an AS lot on a PAS product as PAS', () => {
     const q8 = product({ id: 'q8', name: 'Electronic Cash scale Q8', yesoneSku: 'ECS5W', modelid: 'ECSP' });
     assert.equal(
