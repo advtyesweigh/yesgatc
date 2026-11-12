@@ -8,6 +8,7 @@ import {
 } from '../../components/VerificationPhotoUploadSlot';
 import { type OvQuotaAllotment } from '../../lib/ovQuotaGate';
 import { pasBankOptionsForJob } from '../../lib/pasSerialBank';
+import { useRcScope } from '../../lib/roleScope';
 import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
 import {
   InterweighingDirectSerialField,
@@ -73,6 +74,7 @@ export function OvSelfSerialPlatePanel({
   onPlateSelect: (file: File) => void;
   onPlateRemove: () => void;
 }) {
+  const { rcUid } = useRcScope();
   const slot = images[SERIAL_PLATE_IMAGE_KIND] ?? emptyDeviceImageSlot();
   const hasPlate = Boolean(slot.pendingFile || (slot.file && !slot.removed));
   const serialInputRef = useRef<HTMLInputElement>(null);
@@ -84,7 +86,7 @@ export function OvSelfSerialPlatePanel({
     row.serialNumber,
     product,
     isPas && !disabled,
-    pasBankOptionsForJob(verificationType),
+    { ...pasBankOptionsForJob(verificationType), rcId: rcUid },
   );
   const [ocrHint, setOcrHint] = useState<string | null>(null);
 

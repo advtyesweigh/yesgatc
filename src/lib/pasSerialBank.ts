@@ -13,6 +13,7 @@ import {
   pasBankListedForProduct,
   pasBankMatchesProduct,
   pasBankOptionsForJob,
+  pasBankRcError,
   pasBankStatusError,
   pasSerialHoldIsStale,
   pasSerialsFromMetaRanges,
@@ -180,7 +181,7 @@ export async function verifyPasDevicesInBank(
 }
 
 export async function verifyPasCalibrationRecords(
-  records: Array<Pick<SiteCalibration, 'id' | 'productId' | 'serialNumber' | 'verificationType'>>,
+  records: Array<Pick<SiteCalibration, 'id' | 'productId' | 'serialNumber' | 'verificationType' | 'rcId'>>,
   products: readonly Product[] | undefined,
 ): Promise<string | null> {
   for (const record of records) {
@@ -190,6 +191,7 @@ export async function verifyPasCalibrationRecords(
       {
         ...pasBankOptionsForJob(record.verificationType),
         ownRecordId: record.id,
+        rcId: record.rcId,
       },
     );
     if (error) return error;
@@ -225,6 +227,8 @@ export async function markPasSerialUsed(options: {
       throw new Error(`Serial ${trimmed} is not in the PAS number bank.`);
     }
     const data = (snap.data() || {}) as PasBankDoc;
+    const rcError = pasBankRcError(trimmed, data, options.rcId);
+    if (rcError) throw new Error(rcError);
     const status = String(data.status || '').trim().toLowerCase();
     if (status === 'used') {
       if (options.recordId && data.usedRecordId === options.recordId) return;

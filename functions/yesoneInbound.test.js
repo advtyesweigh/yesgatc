@@ -908,6 +908,96 @@ test('product.bank PAS range writes number bank for ATM GOLD', async () => {
   assert.equal(db._store['serialAllotments/YJ01004'], undefined);
 });
 
+test('PAS bill with a dealer stays on that RC list', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/mzn': { role: 'rc_admin', rcCode: 'MZN', companyName: 'Meezan', yesoneAllottedSerials: ['G0001'] },
+    'users/ace': { role: 'rc_admin', rcCode: 'ACE', companyName: 'Ace', yesoneAllottedSerials: [] },
+    'products/lbl': {
+      pasPreAllotted: true,
+      yesoneSku: 'Q9LBL',
+      modelid: 'TMAP',
+      name: 'Label Printing Scale PAS',
+    },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        serialNumber: 'AS00079',
+        sku: 'Q9LBL',
+        rcCode: 'MZN',
+        invoice: { invoiceNumber: 'YES/26-27/3145' },
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.results[0].pool, 'pas');
+  assert.equal(res.body.results[0].rcId, 'mzn');
+  assert.equal(db._store['pasSerialBank/AS00079'].status, 'available');
+  assert.equal(db._store['pasSerialBank/AS00079'].rcId, 'mzn');
+  assert.equal(db._store['pasSerialBank/AS00079'].rcCode, 'MZN');
+  assert.equal(db._store['pasSerialBank/AS00079'].invoiceNo, 'YES/26-27/3145');
+  assert.equal(db._store['serialAllotments/AS00079'].rcId, 'mzn');
+  assert.equal(db._store['serialAllotments/AS00079'].pool, 'pas');
+  assert.ok(db._store['users/mzn'].yesoneAllottedSerials.includes('AS00079'));
+  assert.equal(db._store['users/ace'].yesoneAllottedSerials.includes('AS00079'), false);
+});
+
+test('PAS bill keeps an already used seat used', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/mzn': { role: 'rc_admin', rcCode: 'MZN', companyName: 'Meezan', yesoneAllottedSerials: [] },
+    'products/lbl': {
+      pasPreAllotted: true,
+      yesoneSku: 'Q9LBL',
+      name: 'Label Printing Scale PAS',
+    },
+    'pasSerialBank/AS00042': {
+      serialNumber: 'AS00042',
+      status: 'used',
+      sku: 'Q9LBL',
+      yesoneSku: 'Q9LBL',
+      productId: 'lbl',
+      pool: 'pas',
+      usedRecordId: 'ov1',
+      usedByRcId: 'mzn',
+    },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        serialNumber: 'AS00042',
+        sku: 'Q9LBL',
+        rcCode: 'MZN',
+        invoice: { invoiceNumber: 'YES/26-27/3145' },
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/AS00042'].status, 'used');
+  assert.equal(db._store['pasSerialBank/AS00042'].usedRecordId, 'ov1');
+  assert.equal(db._store['pasSerialBank/AS00042'].rcCode, 'MZN');
+  assert.equal(db._store['serialAllotments/AS00042'].status, 'used');
+  assert.equal(db._store['serialAllotments/AS00042'].pool, 'pas');
+  assert.ok(db._store['users/mzn'].yesoneAllottedSerials.includes('AS00042'));
+});
+
 test('PAS serial.allotted without RC fields writes number bank', async () => {
   const db = createMemoryDb({
     'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },

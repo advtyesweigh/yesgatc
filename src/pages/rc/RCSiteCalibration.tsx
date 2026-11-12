@@ -1580,6 +1580,7 @@ export const RCSiteCalibration: React.FC = () => {
       {
         ...pasBankOptionsForJob(sessionValues.verificationType),
         ownRecordId: editingId,
+        rcId: rcUid,
       },
     );
     if (pasBankError) {
@@ -2275,6 +2276,7 @@ export const RCSiteCalibration: React.FC = () => {
       {
         ...pasBankOptionsForJob(sessionValues.verificationType),
         ownRecordId: editingId,
+        rcId: rcUid,
       },
     );
       if (pasBankError) {
@@ -2452,6 +2454,7 @@ export const RCSiteCalibration: React.FC = () => {
       {
         ...pasBankOptionsForJob(sessionValues.verificationType),
         ownRecordId: editingId,
+        rcId: rcUid,
       },
     );
     if (pasBankError) {

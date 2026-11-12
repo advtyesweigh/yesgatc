@@ -449,6 +449,7 @@ export const VerificationSessionFields = forwardRef<
           {
             ...pasBankOptionsForJob(values.verificationType),
             ownRecordId: pasOwnRecordId,
+            rcId: rcUid,
           },
         );
         if (bankError) {

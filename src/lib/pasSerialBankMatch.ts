@@ -13,6 +13,7 @@ export type PasBankDoc = {
   modelNo?: string;
   modelApprovalNo?: string;
   invoiceNo?: string;
+  rcId?: string | null;
   qty?: number;
   bankQty?: number;
   bankLinked?: number;
@@ -209,7 +210,21 @@ export type PasBankVerifyOptions = {
   allowUsed?: boolean;
   /** This verification already reserved the serial. Retry must not treat that as a conflict. */
   ownRecordId?: string | null;
+  /** Repair centre filing this job. A billed seat allows only this id. */
+  rcId?: string | null;
 };
+
+/** A seat with no billed RC stays shared. A billed seat allows only that RC. */
+export function pasBankRcError(
+  serial: string,
+  bank: { rcId?: string | null } | null | undefined,
+  actorRcId?: string | null,
+): string | null {
+  const owner = String(bank?.rcId || '').trim();
+  if (!owner) return null;
+  if (String(actorRcId || '').trim() === owner) return null;
+  return `Serial ${serial.trim()} is allotted to another repair centre.`;
+}
 
 export function pasBankOptionsForJob(verificationType: string | undefined | null): PasBankVerifyOptions {
   return { allowUsed: verificationType === 'RV' };
@@ -251,6 +266,8 @@ export function interpretPasBankLookup(
   if (!pasBankMatchesProduct(data, product)) {
     return `Serial ${trimmed} is not allotted to this PAS product.`;
   }
+  const rcError = pasBankRcError(trimmed, data, options?.rcId);
+  if (rcError) return rcError;
   return null;
 }
 

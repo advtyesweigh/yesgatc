@@ -1327,6 +1327,19 @@ function isPasInbound(item, pasProduct) {
   return Boolean(pasProduct);
 }
 
+/** Product-bank loads stay a shared number bank. A dealer on a bill owns the seats. */
+function isSharedPasBankLoad(item) {
+  if (item?.productBank === true) return true;
+  const raw = String(item?.event || item?.type || '').trim().toLowerCase();
+  return raw === 'product.bank'
+    || raw === 'product_bank'
+    || raw === 'productbank'
+    || raw === 'pas.bank'
+    || raw === 'pas_bank'
+    || raw === 'pasbank'
+    || raw === 'product.pas.bank';
+}
+
 function pasBankFields(item, serialNumber, pasProduct, extra = {}) {
   const rec = asRecord(item);
   const product = asRecord(rec.product);
@@ -1585,14 +1598,23 @@ async function applySerialAllottedMany(db, items, rcCache) {
     if (isPasInbound(item, pasProduct)) {
       const gasRef = db.doc(`${SERIAL_COLLECTION}/${id}`);
       const gasSnap = await gasRef.get();
-      if (gasSnap.exists) {
+      const previousAllotment = gasSnap.exists ? gasSnap.data() || {} : null;
+      const sharedBank = isSharedPasBankLoad(item);
+      const billedRc = !sharedBank && itemHasRcIdentity(item)
+        ? await resolveRcCached(db, item, rcCache)
+        : null;
+      if (sharedBank && gasSnap.exists) {
         gasReleases.push(gasRef);
-        const prevRc = optionalTrimmed(gasSnap.data()?.rcId);
+        const prevRc = optionalTrimmed(previousAllotment?.rcId);
         if (prevRc) {
           const drop = serialsByRc.get(`drop:${prevRc}`) || [];
           drop.push(serialNumber);
           serialsByRc.set(`drop:${prevRc}`, drop);
         }
+      } else if (billedRc?.id && previousAllotment?.rcId && previousAllotment.rcId !== billedRc.id) {
+        const drop = serialsByRc.get(`drop:${previousAllotment.rcId}`) || [];
+        drop.push(serialNumber);
+        serialsByRc.set(`drop:${previousAllotment.rcId}`, drop);
       }
       const existing = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
       const prev = existing.exists ? existing.data() || {} : {};
@@ -1617,6 +1639,15 @@ async function applySerialAllottedMany(db, items, rcCache) {
         if (usage.to) cur.to = usage.to;
         pasMetaByKey.set(metaKey, cur);
       }
+      const rcFields = sharedBank
+        ? { rcId: null, rcCode: null, rcCompanyName: null }
+        : billedRc?.id
+          ? {
+            rcId: billedRc.id,
+            rcCode: normalizeRcCode(billedRc.rcCode || item.rcCode) || null,
+            rcCompanyName: optionalTrimmed(billedRc.companyName || item.rcCompanyName) || null,
+          }
+          : {};
       writes.push({
         path: `${PAS_SERIAL_COLLECTION}/${id}`,
         data: pasBankFields(item, serialNumber, pasProduct, {
@@ -1628,14 +1659,36 @@ async function applySerialAllottedMany(db, items, rcCache) {
           serialTo: usage.to,
           allottedAt: optionalTrimmed(item.allottedAt) || (existing.exists ? prev.allottedAt : null) || now,
           ...(keepUsed ? {} : { usedAt: null, usedByUid: null, usedByRcId: null, usedRecordId: null }),
+          ...rcFields,
         }),
       });
+      if (billedRc?.id) {
+        const previousStatus = optionalTrimmed(previousAllotment?.status);
+        const keepStatus = keepUsed
+          ? 'used'
+          : previousStatus && previousStatus !== 'cancelled' && previousStatus !== 'replaced'
+            ? previousStatus
+            : 'allotted';
+        writes.push({
+          path: `${SERIAL_COLLECTION}/${id}`,
+          data: allotmentFields(item, billedRc, serialNumber, {
+            pool: 'pas',
+            status: keepStatus,
+            allottedAt: optionalTrimmed(previousAllotment?.allottedAt) || optionalTrimmed(item.allottedAt) || now,
+          }),
+        });
+        const list = serialsByRc.get(billedRc.id) || [];
+        list.push(serialNumber);
+        serialsByRc.set(billedRc.id, list);
+      }
       results.push({
         ok: true,
         event: 'serial.allotted',
         id: serialNumber,
         pool: 'pas',
         productId: pasProduct?.id || null,
+        rcId: billedRc?.id || null,
+        warning: !sharedBank && itemHasRcIdentity(item) && !billedRc ? 'rc_not_found' : null,
       });
       continue;
     }
@@ -1855,11 +1908,19 @@ async function applySerialCancelled(db, item) {
   }
 
   if (pasSnap.exists && !snap.exists) {
+    const owner = optionalTrimmed(pasSnap.data()?.rcId);
+    const dropKey = serialNumber.trim().toUpperCase();
+    if (owner) {
+      await patchRcAllottedSerials(db, owner, list => (
+        list.filter(serial => serial.trim().toUpperCase() !== dropKey)
+      ));
+    }
     return {
       ok: true,
       event: 'serial.cancelled',
       id: serialNumber,
       pool: 'pas',
+      rcId: owner || null,
     };
   }
 
@@ -1930,6 +1991,13 @@ async function applySerialUpdated(db, item) {
       },
       { merge: true },
     );
+    const pasOwner = optionalTrimmed(pasPrevious.rcId)
+      ? {
+        id: optionalTrimmed(pasPrevious.rcId),
+        rcCode: pasPrevious.rcCode,
+        companyName: pasPrevious.rcCompanyName,
+      }
+      : null;
     await db.doc(`${PAS_SERIAL_COLLECTION}/${newId}`).set(
       pasBankFields(
         { ...pasPrevious, ...item },
@@ -1939,10 +2007,48 @@ async function applySerialUpdated(db, item) {
           status: 'available',
           previousSerialNumber: previousSerial,
           allottedAt: pasPrevious.allottedAt || now,
+          rcId: pasOwner?.id || null,
+          rcCode: normalizeRcCode(pasOwner?.rcCode) || null,
+          rcCompanyName: optionalTrimmed(pasOwner?.companyName) || null,
         },
       ),
       { merge: true },
     );
+    if (pasOwner?.id) {
+      const oldAllotment = await db.doc(`${SERIAL_COLLECTION}/${oldId}`).get();
+      if (oldAllotment.exists) {
+        await db.doc(`${SERIAL_COLLECTION}/${oldId}`).set(
+          {
+            serialNumber: previousSerial,
+            status: 'replaced',
+            replacedBy: nextSerial,
+            updatedAt: now,
+            source: 'yesone',
+          },
+          { merge: true },
+        );
+      }
+      await db.doc(`${SERIAL_COLLECTION}/${newId}`).set(
+        allotmentFields(
+          { ...pasPrevious, ...item },
+          pasOwner,
+          nextSerial,
+          {
+            pool: 'pas',
+            status: 'allotted',
+            previousSerialNumber: previousSerial,
+            allottedAt: pasPrevious.allottedAt || now,
+          },
+        ),
+        { merge: true },
+      );
+      await patchRcAllottedSerials(db, pasOwner.id, list => {
+        const next = list.filter(serial => serial.trim().toUpperCase() !== previousSerial.trim().toUpperCase());
+        return next.some(serial => serial.trim().toUpperCase() === nextSerial.trim().toUpperCase())
+          ? next
+          : [...next, nextSerial];
+      });
+    }
     const calibSnap = await db.collection('siteCalibrations')
       .where('serialNumber', '==', previousSerial)
       .limit(40)

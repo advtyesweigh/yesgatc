@@ -35,6 +35,7 @@ import {
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
 import { type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { pasBankOptionsForJob, productUsesPasSerials } from '../../lib/pasSerialBank';
+import { useRcScope } from '../../lib/roleScope';
 import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
 import {
   InterweighingDirectSerialField,
@@ -212,6 +213,7 @@ function DeviceSerialField({
   pasManual?: boolean;
   product?: Product | null;
 }) {
+  const { rcUid } = useRcScope();
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
   const lockThisRow =
@@ -228,6 +230,7 @@ function DeviceSerialField({
     {
       ...pasBankOptionsForJob(isRv ? 'RV' : 'OV'),
       ownRecordId,
+      rcId: rcUid,
     },
   );
 

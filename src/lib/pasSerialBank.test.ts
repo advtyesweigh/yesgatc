@@ -191,6 +191,19 @@ describe('interpretPasBankLookup', () => {
     assert.equal(interpretPasBankLookup('YJ00001', bank, scale10), null);
   });
 
+  it('allows the billed repair centre and blocks every other centre', () => {
+    const billed = { ...bank, rcId: 'mzn' };
+    assert.equal(interpretPasBankLookup('YJ00001', billed, scale10, { rcId: 'mzn' }), null);
+    assert.equal(
+      interpretPasBankLookup('YJ00001', billed, scale10, { rcId: 'ace' }),
+      'Serial YJ00001 is allotted to another repair centre.',
+    );
+    assert.equal(
+      interpretPasBankLookup('YJ00001', billed, scale10),
+      'Serial YJ00001 is allotted to another repair centre.',
+    );
+  });
+
   it('blocks a 10 kg serial on the 5 kg product', () => {
     assert.equal(
       interpretPasBankLookup('YJ00001', bank, scale5),
