@@ -129,7 +129,7 @@ export function invoiceAssigneeUid(
   return hit?.verifierUid || null;
 }
 
-export { pickQuotaSerialsForActor } from './rcQuotaMath';
+export { actorJobBalanceQty, pickQuotaSerialsForActor } from './rcQuotaMath';
 
 export async function toggleVoidedSerial(
   rcUid: string,

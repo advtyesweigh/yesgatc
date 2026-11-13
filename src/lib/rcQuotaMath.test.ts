@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  actorJobBalanceQty,
   countReservedOverlaySeats,
   excludePasQuotaSerials,
   pasStickersAmong,
@@ -355,6 +356,26 @@ describe('pickQuotaSerialsForActor', () => {
     assert.equal(pick.includes('X00090'), false);
     assert.equal(pick.includes('X00109'), false);
     assert.equal(pick.includes('X00423'), false);
+  });
+});
+
+describe('actorJobBalanceQty', () => {
+  it('Meezan VCT uses Allotted − Used when GAS remaining is empty', () => {
+    assert.equal(
+      actorJobBalanceQty({ isVerifier: false, balanceQty: 54, verifierSeatCount: 0 }),
+      54,
+    );
+  });
+
+  it('verifier stays on own unused seats', () => {
+    assert.equal(
+      actorJobBalanceQty({ isVerifier: true, balanceQty: 54, verifierSeatCount: 0 }),
+      0,
+    );
+    assert.equal(
+      actorJobBalanceQty({ isVerifier: true, balanceQty: 54, verifierSeatCount: 11 }),
+      11,
+    );
   });
 });
 

@@ -166,7 +166,7 @@ import {
 } from './VerificationSessionFields';
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
-import { isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { actorJobBalanceQty, isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
 import {
@@ -487,11 +487,11 @@ export const RCSiteCalibration: React.FC = () => {
       }),
     [actorProfile?.interweighingDirectSerials, records],
   );
-  const actorBalanceQty = isRcAdmin
-    ? quotaSeats.balanceQty
-    : isVerifier || isVct
-      ? pickSerials.length
-      : quotaSeats.balanceQty;
+  const actorBalanceQty = actorJobBalanceQty({
+    isVerifier,
+    balanceQty: quotaSeats.balanceQty,
+    verifierSeatCount: pickSerials.length,
+  });
   const ovQuotaGate = useMemo<OvQuotaGate>(() => {
     const editingRecord = editingId ? records.find(r => r.id === editingId) : null;
     const held = editingRecord?.serialNumber?.trim()
