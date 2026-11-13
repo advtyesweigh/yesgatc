@@ -53,6 +53,21 @@ public sealed class CertificationQueueFilterTests
     }
 
     [Fact]
+    public void Apply_orders_oldest_submitted_first()
+    {
+        var records = new[]
+        {
+            Make("new", "rc1", "SN3", "submitted", submittedAt: "2026-11-13T10:00:00Z"),
+            Make("old", "rc1", "SN1", "submitted", submittedAt: "2026-11-01T08:00:00Z"),
+            Make("mid", "rc1", "SN2", "submitted", submittedAt: "2026-11-07T09:00:00Z"),
+        };
+
+        var filtered = CertificationQueueFilter.Apply(records);
+
+        Assert.Equal(["old", "mid", "new"], filtered.Select(record => record.Id).ToArray());
+    }
+
+    [Fact]
     public void Apply_scopes_to_rc_id()
     {
         var records = new[]
@@ -75,7 +90,8 @@ public sealed class CertificationQueueFilterTests
         string? supersededBy = null,
         string? voidedAt = null,
         string? resubmittedFrom = null,
-        string? pdfUrl = null) =>
+        string? pdfUrl = null,
+        string? submittedAt = null) =>
         new()
         {
             Id = id,
@@ -86,5 +102,6 @@ public sealed class CertificationQueueFilterTests
             CertificateVoidedAt = voidedAt,
             ResubmittedFromId = resubmittedFrom,
             CertificatePdfUrl = pdfUrl,
+            SubmittedAt = submittedAt,
         };
 }

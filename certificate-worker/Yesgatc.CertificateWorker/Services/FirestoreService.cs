@@ -862,9 +862,21 @@ public sealed class FirestoreService
             idToken,
             cancellationToken);
 
-        return rows
+        var mapped = rows
             .Where(row => row.Document is not null)
-            .Select(row => MapDocument(row.Document!, rcNames))
+            .Select(row => MapDocument(row.Document!, rcNames));
+
+        // Submitted work is FIFO. Other statuses keep newest-first; signer and
+        // signed-upload filters apply their own order before those jobs run.
+        if (status == "submitted")
+        {
+            return mapped
+                .OrderBy(record => record.SubmittedAt ?? "", StringComparer.Ordinal)
+                .ThenBy(record => record.Id, StringComparer.Ordinal)
+                .ToList();
+        }
+
+        return mapped
             .OrderByDescending(record => status == "approved"
                 ? record.ApprovedAt ?? record.SubmittedAt ?? record.Id
                 : record.SubmittedAt ?? record.Id)
