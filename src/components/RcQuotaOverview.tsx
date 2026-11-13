@@ -4,7 +4,6 @@ import { CircleDot, Hash, Layers } from 'lucide-react';
 import { db } from '../firebase';
 import {
   computeRcQuotaSeats,
-  excludeReservedSerials,
   normalizeReservedAssignments,
 } from '../lib/rcMasterQuota';
 import {
@@ -204,13 +203,8 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     ],
   );
 
-  // Balance qty = allotted − used (source of truth). No serial overlay on tap.
-  const balanceSerials = useMemo(() => {
-    if (isRcAdmin) return quota.remaining;
-    return excludeReservedSerials(quota.vctRemaining, mergedReserved);
-  }, [isRcAdmin, mergedReserved, quota.remaining, quota.vctRemaining]);
-
-  const balanceQty = isRcAdmin ? quota.balanceQty : balanceSerials.length;
+  // Balance = Allotted − Used (purchase qty − live OV used). Never sticker-bank length.
+  const balanceQty = quota.balanceQty;
 
   return (
     <section className="wl-stages-panel wl-quota" aria-labelledby="wl-quota-title">

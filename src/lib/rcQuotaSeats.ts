@@ -250,11 +250,9 @@ export function computeRcQuotaSeats(input: {
     recordUsedCount: used.count,
     storedUsed,
     recordsAreRcWide: Boolean(input.recordsAreRcWide),
-    allottedQty,
-    remainingCount: gasRemaining.length,
   });
-  // Quota to-do = allotted − used when qty present. Never bank / remaining.length.
-  const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
+  // Balance = Allotted − Used only. Never unused sticker-bank length.
+  const balanceQty = allottedQty == null ? null : allottedQty - usedQty;
   return {
     remaining,
     vctRemaining,

@@ -241,34 +241,29 @@ export function RcQuotaPanel() {
     };
   }, []);
 
-  // Load RC-wide OVs only when seat overlay opens — not N live listeners for every RC.
+  // Live GAS OV counts for every RC so Used/Balance match RC home (Allotted−Used).
+  // One-shot getDocs per RC — not N live listeners.
   useEffect(() => {
-    if (!openUid) return;
+    if (quotas.length === 0) return;
     let cancelled = false;
-    void getDocs(query(collection(db, 'siteCalibrations'), where('rcId', '==', openUid)))
-      .then(snap => {
-        if (cancelled) return;
-        setRecordsByRc(prev => {
-          const next = new Map(prev);
-          next.set(
-            openUid,
+    const uids = quotas.map(row => row.uid);
+    void Promise.all(
+      uids.map(uid =>
+        getDocs(query(collection(db, 'siteCalibrations'), where('rcId', '==', uid)))
+          .then(snap => [
+            uid,
             snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
-          );
-          return next;
-        });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setRecordsByRc(prev => {
-          const next = new Map(prev);
-          next.set(openUid, []);
-          return next;
-        });
-      });
+          ] as const)
+          .catch(() => [uid, [] as SiteCalibration[]] as const),
+      ),
+    ).then(entries => {
+      if (cancelled) return;
+      setRecordsByRc(new Map(entries));
+    });
     return () => {
       cancelled = true;
     };
-  }, [openUid]);
+  }, [quotas]);
 
   const pasSerials = usePasBlockedSerials(allotmentRows, products);
   const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
@@ -284,17 +279,18 @@ export function RcQuotaPanel() {
         ...(allotUsedByRc.get(row.uid) || []),
         ...(code ? allotUsedByRc.get(code) || [] : []),
       ]);
-      const hasRcWide = recordsByRc.has(row.uid);
+      const rcRecords = recordsByRc.get(row.uid);
       const seats = computeRcQuotaSeats({
         rcCode: row.rcCode,
         companyName: row.companyName,
         ovQuota: row.ovQuota,
         ovQuotaUsed: row.ovQuotaUsed,
-        recordsAreRcWide: hasRcWide,
+        // Live OVs loaded for all rows — same Used path as RC home.
+        recordsAreRcWide: rcRecords != null,
         storedSerials: row.storedSerials,
         allotSerials,
         voidedSerials: row.voidedSerials,
-        records: recordsByRc.get(row.uid) || [],
+        records: rcRecords || [],
         pasProductIds,
         pasSerials,
         allotmentUsedSerials,

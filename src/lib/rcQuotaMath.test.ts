@@ -17,37 +17,32 @@ describe('resolveRcQuotaUsedQty', () => {
   it('uses live OV count when records are RC-wide', () => {
     assert.equal(
       resolveRcQuotaUsedQty({
-        recordUsedCount: 587,
-        storedUsed: 744,
+        recordUsedCount: 949,
+        storedUsed: 921,
         recordsAreRcWide: true,
-        allottedQty: 744,
-        remainingCount: 157,
       }),
-      587,
+      949,
     );
   });
 
-  it('does not let stale YesOne used wipe remaining seats', () => {
+  it('never seat-clamps Used from unused sticker bank', () => {
+    // Old bug: allotted−remainingBank rewrote Used to 921 when jobs unloaded.
     assert.equal(
       resolveRcQuotaUsedQty({
-        recordUsedCount: 100,
-        storedUsed: 744,
+        recordUsedCount: 0,
+        storedUsed: 949,
         recordsAreRcWide: false,
-        allottedQty: 744,
-        remainingCount: 157,
       }),
-      587,
+      949,
     );
   });
 
-  it('lifts incomplete VCT count when YesOne used is below remaining seats', () => {
+  it('lifts incomplete VCT count with YesOne stored floor', () => {
     assert.equal(
       resolveRcQuotaUsedQty({
         recordUsedCount: 20,
         storedUsed: 400,
         recordsAreRcWide: false,
-        allottedQty: 744,
-        remainingCount: 157,
       }),
       400,
     );

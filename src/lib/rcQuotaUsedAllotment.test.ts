@@ -56,7 +56,7 @@ describe('used allotment exclusion from Balance / chips', () => {
     assert.deepEqual(seats.pasRemaining.sort(), ['VJ00151', 'YJ00498']);
   });
 
-  it('admin table: stale YesOne used=allotted does not wipe remaining seats', () => {
+  it('admin table: Used is live/stored verified count — never allotted−bank', () => {
     const used = Array.from({ length: 587 }, (_, i) => `X${String(i + 1).padStart(5, '0')}`);
     const remaining = Array.from({ length: 157 }, (_, i) => `X${String(1000 + i).padStart(5, '0')}`);
     const seats = computeRcQuotaSeats({
@@ -73,9 +73,49 @@ describe('used allotment exclusion from Balance / chips', () => {
     });
     assert.equal(seats.allottedQty, 744);
     assert.equal(seats.remaining.length, 157);
-    assert.equal(seats.usedQty, 587);
-    assert.equal(seats.balanceQty, 157);
+    // Incomplete scope floors on stored YesOne used — not seat-clamped to 587.
+    assert.equal(seats.usedQty, 744);
+    assert.equal(seats.balanceQty, 0);
     assert.deepEqual(seats.pasRemaining, []);
+  });
+
+  it('MZN Interweigh closed-row matches home: live Used / Balance = allotted − used', () => {
+    const liveUsed = Array.from({ length: 949 }, (_, i) => ({
+      id: `ov-${i}`,
+      serialNumber: `X${String(i + 1).padStart(5, '0')}`,
+      verificationType: 'OV',
+      status: 'submitted',
+      rcId: 'meezan',
+    })) as SiteCalibration[];
+    // Short unused bank must not rewrite Used (old closed-row: 921 / 91).
+    const unusedBank = Array.from({ length: 91 }, (_, i) => `G${String(i + 1).padStart(5, '0')}`);
+    const home = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan electronic scales pvt ltd',
+      ovQuota: '1012',
+      ovQuotaUsed: 921,
+      recordsAreRcWide: true,
+      storedSerials: unusedBank,
+      allotSerials: unusedBank,
+      voidedSerials: [],
+      records: liveUsed,
+    });
+    const interweigh = computeRcQuotaSeats({
+      rcCode: 'MZN',
+      companyName: 'Meezan electronic scales pvt ltd',
+      ovQuota: '1012',
+      ovQuotaUsed: 921,
+      recordsAreRcWide: true,
+      storedSerials: unusedBank,
+      allotSerials: unusedBank,
+      voidedSerials: [],
+      records: liveUsed,
+    });
+    assert.equal(home.allottedQty, 1012);
+    assert.equal(home.usedQty, 949);
+    assert.equal(home.balanceQty, 63);
+    assert.equal(interweigh.usedQty, home.usedQty);
+    assert.equal(interweigh.balanceQty, home.balanceQty);
   });
 
   it('Meezan keeps unused PAS in pasRemaining only; GAS remaining stays GAS; Balance allotted−used', () => {

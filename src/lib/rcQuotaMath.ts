@@ -6,27 +6,20 @@ import {
 
 /** GAS RC quota qty. PAS seats never consume or inflate these numbers. */
 
+/**
+ * Used = verified GAS OV count.
+ * RC-wide records → live count only (ignore stale YesOne ovQuotaUsed).
+ * Incomplete scope (VCT own-only) → max(live, stored) floor — never bank clamp.
+ */
 export function resolveRcQuotaUsedQty(input: {
   recordUsedCount: number;
   storedUsed: number | null;
   recordsAreRcWide: boolean;
-  allottedQty: number | null;
-  remainingCount: number;
 }): number {
   const recordUsed = Math.max(0, input.recordUsedCount);
-  let usedQty =
-    input.storedUsed == null
-      ? recordUsed
-      : input.recordsAreRcWide
-        ? recordUsed
-        : Math.max(recordUsed, input.storedUsed);
-
-  // Stale YesOne ovQuotaUsed often equals Allotted. Unused GAS seats stay unused.
-  if (input.allottedQty != null && input.remainingCount > 0) {
-    const seatUsed = Math.max(0, input.allottedQty - input.remainingCount);
-    if (usedQty > seatUsed) usedQty = Math.max(recordUsed, seatUsed);
-  }
-  return usedQty;
+  if (input.storedUsed == null) return recordUsed;
+  if (input.recordsAreRcWide) return recordUsed;
+  return Math.max(recordUsed, input.storedUsed);
 }
 
 export function recordUsesPasQuota(
