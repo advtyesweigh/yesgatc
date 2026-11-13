@@ -14772,6 +14772,53 @@ body.product-spec-picker-open .verification-mobile-chrome--actions {
   color: var(--text-muted, #94a3b8);
 }
 
+.available-serials {
+  margin-top: 0.65rem;
+}
+
+.available-serials__label {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+}
+
+.available-serials__search {
+  margin-bottom: 0.4rem;
+}
+
+.available-serials__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 11.5rem;
+  overflow: auto;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.35));
+  border-radius: 10px;
+}
+
+.available-serials__item {
+  width: 100%;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.65rem;
+  border: 0;
+  border-bottom: 1px solid var(--border, rgba(148, 163, 184, 0.2));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.available-serials__item:last-child {
+  border-bottom: 0;
+}
+
+.available-serials__item:hover:not(:disabled),
+.available-serials__item:focus-visible {
+  background: rgba(59, 130, 246, 0.12);
+}
+
 .verification-wizard--ov-self .verification-photo-upload-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

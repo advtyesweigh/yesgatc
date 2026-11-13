@@ -166,7 +166,8 @@ import {
 } from './VerificationSessionFields';
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
-import { actorJobBalanceQty, isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { actorJobBalanceQty, excludeReservedSerials, isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { uniqueSerials } from '../../lib/yesoneInboundData';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
 import {
@@ -492,6 +493,22 @@ export const RCSiteCalibration: React.FC = () => {
     balanceQty: quotaSeats.balanceQty,
     verifierSeatCount: pickSerials.length,
   });
+  const availableSerials = useMemo(() => {
+    if (!quotaSeats.ready) return undefined;
+    if (isVerifier) return uniqueSerials([...pickSerials, ...directSeats.unused]);
+    const pas = isVct
+      ? excludeReservedSerials(quotaSeats.pasRemaining, quotaSeats.reservedSerials)
+      : quotaSeats.pasRemaining;
+    return uniqueSerials([...pickSerials, ...pas]);
+  }, [
+    directSeats.unused,
+    isVerifier,
+    isVct,
+    pickSerials,
+    quotaSeats.pasRemaining,
+    quotaSeats.ready,
+    quotaSeats.reservedSerials,
+  ]);
   const ovQuotaGate = useMemo<OvQuotaGate>(() => {
     const editingRecord = editingId ? records.find(r => r.id === editingId) : null;
     const held = editingRecord?.serialNumber?.trim()
@@ -3565,6 +3582,7 @@ export const RCSiteCalibration: React.FC = () => {
                       mobileFloatingChrome={mobileFloatingChrome}
                       lockKind={showAddForm}
                       ovQuota={sessionValues.verificationType === 'OV' ? ovQuotaGate : null}
+                      availableSerials={availableSerials}
                       pasOwnRecordId={editingId}
                       isVerifier={isVerifier}
                       verifierPincode={actorProfile?.pincode ?? null}

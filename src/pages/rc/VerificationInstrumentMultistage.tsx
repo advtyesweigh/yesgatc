@@ -42,6 +42,7 @@ type VerificationInstrumentMultistageProps = {
   geoStampWeather?: StampWeather | null;
   geoStampAllowLiveGps?: boolean;
   ovQuota?: OvQuotaGate | null;
+  availableSerials?: readonly string[];
   lockedSerial?: string;
 };
 
@@ -73,6 +74,7 @@ export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMu
   geoStampWeather = null,
   geoStampAllowLiveGps = true,
   ovQuota = null,
+  availableSerials,
   lockedSerial = '',
 }) => {
   const locked = submitting || readOnly;
@@ -152,6 +154,7 @@ export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMu
           geoStampWeather={geoStampWeather}
           geoStampAllowLiveGps={geoStampAllowLiveGps}
           ovQuota={ovQuota}
+          availableSerials={availableSerials}
           lockedSerial={lockedSerial}
           tileRef={node => {
             tileRefs.current[entry.row.localId] = node;

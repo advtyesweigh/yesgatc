@@ -81,7 +81,7 @@ export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
     id: 'serial',
     label: 'Serial',
     shortLabel: 'Serial',
-    description: 'Photograph the serial plate. GAS: pick an allotted serial. PAS: type and verify.',
+    description: 'Photograph the serial plate. Tap an unused sticker, or type the number on the plate.',
   },
   {
     id: 'photos',
@@ -115,7 +115,7 @@ export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
     id: 'serial',
     label: 'Serial',
     shortLabel: 'Serial',
-    description: 'Photograph the serial plate. GAS: pick an allotted serial. PAS: type and verify.',
+    description: 'Photograph the serial plate. Tap an unused sticker, or type the number on the plate.',
   },
   {
     id: 'photos',

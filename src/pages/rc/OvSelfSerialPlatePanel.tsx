@@ -11,6 +11,7 @@ import { productUsesPasSerials } from '../../lib/pasSerialBank';
 import { formatShopCapacityLine, getProductSpecifications, resolveProductSpecification } from '../../lib/productSpecifications';
 import { readSerialPlate } from '../../lib/readSerialPlate';
 import { applyOcrSerialToPool } from '../../lib/serialEntryPool';
+import { AvailableSerialList } from '../../components/AvailableSerialList';
 import {
   SERIAL_PLATE_IMAGE_KIND,
   VERIFICATION_IMAGE_CONFIG,
@@ -31,6 +32,7 @@ export function OvSelfSerialPlatePanel({
   scopedToVerifier: _scopedToVerifier = false,
   allowInterweighingDirect: _allowInterweighingDirect = false,
   directRemaining: _directRemaining = [],
+  availableSerials,
   disabled,
   geoStampCoords,
   geoStampWeather,
@@ -50,6 +52,7 @@ export function OvSelfSerialPlatePanel({
   scopedToVerifier?: boolean;
   allowInterweighingDirect?: boolean;
   directRemaining?: string[];
+  availableSerials?: readonly string[];
   disabled?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
@@ -165,8 +168,13 @@ export function OvSelfSerialPlatePanel({
           onChange={e => onSerialChange(e.target.value)}
         />
         <p className="ov-self-serial-hint ov-self-serial-hint--muted" role="status">
-          Type the serial from the plate.
+          Type the serial from the plate, or tap an unused sticker.
         </p>
+        <AvailableSerialList
+          serials={availableSerials}
+          disabled={disabled}
+          onPick={serial => onSerialChange(serial)}
+        />
       </div>
 
       {isRv && onYearChange ? (

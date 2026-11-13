@@ -36,6 +36,7 @@ import type { JobType, Product, RcFeesStructure, VerificationLocation } from '..
 import { type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { productUsesPasSerials } from '../../lib/pasSerialBank';
 import { usePasSerialHint } from '../../hooks/usePasSerialHint';
+import { AvailableSerialList } from '../../components/AvailableSerialList';
 
 const VerificationImageColumnHead: React.FC<{
   kind: VerificationImageKind;
@@ -171,6 +172,7 @@ type VerificationDeviceFieldsProps = {
   verificationSubject?: 'self' | 'customer';
   feesStructure?: RcFeesStructure;
   ovQuota?: OvQuotaGate | null;
+  availableSerials?: readonly string[];
   lockedSerial?: string;
   /** Draft that already reserved this serial. The bank check must not call that a conflict. */
   pasOwnRecordId?: string | null;
@@ -190,6 +192,7 @@ function DeviceSerialField({
   ownRecordId = null,
   pasManual = false,
   product = null,
+  availableSerials,
 }: {
   id: string;
   className: string;
@@ -204,6 +207,7 @@ function DeviceSerialField({
   ownRecordId?: string | null;
   pasManual?: boolean;
   product?: Product | null;
+  availableSerials?: readonly string[];
 }) {
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
@@ -250,6 +254,11 @@ function DeviceSerialField({
           {pasHint.text}
         </p>
       ) : null}
+      <AvailableSerialList
+        serials={availableSerials}
+        disabled={disabled}
+        onPick={serial => onDeviceChange(row.localId, { serialNumber: serial })}
+      />
     </>
   );
 }
@@ -307,6 +316,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   verificationSubject: _verificationSubject = 'customer',
   feesStructure,
   ovQuota = null,
+  availableSerials,
   lockedSerial = '',
   pasOwnRecordId = null,
 }) => {
@@ -654,6 +664,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       row={row}
                       devices={devices}
                       ovQuota={ovQuota}
+                      availableSerials={availableSerials}
                       isRv={isRv}
                       locked={locked}
                       lockedSerial={lockedSerial}
@@ -829,6 +840,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         row={row}
                         devices={devices}
                         ovQuota={ovQuota}
+                        availableSerials={availableSerials}
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
@@ -923,6 +935,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         row={row}
                         devices={devices}
                         ovQuota={ovQuota}
+                        availableSerials={availableSerials}
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
@@ -996,6 +1009,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         row={row}
                         devices={devices}
                         ovQuota={ovQuota}
+                        availableSerials={availableSerials}
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}

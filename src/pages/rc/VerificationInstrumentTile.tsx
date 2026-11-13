@@ -47,6 +47,7 @@ type VerificationInstrumentTileProps = {
   geoStampAllowLiveGps?: boolean;
   tileRef?: (node: HTMLElement | null) => void;
   ovQuota?: OvQuotaGate | null;
+  availableSerials?: readonly string[];
   lockedSerial?: string;
 };
 
@@ -79,6 +80,7 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
   geoStampAllowLiveGps = true,
   tileRef,
   ovQuota = null,
+  availableSerials,
   lockedSerial = '',
 }) => {
   const localId = row.localId;
@@ -313,6 +315,7 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
               embedded
               focusSerialRequest={focusSerialRequest}
               ovQuota={ovQuota}
+              availableSerials={availableSerials}
               lockedSerial={lockedSerial}
             />
           ) : (

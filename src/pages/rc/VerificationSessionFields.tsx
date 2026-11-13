@@ -147,6 +147,8 @@ type VerificationSessionFieldsProps = {
   mobileFloatingChrome?: boolean;
   lockKind?: boolean;
   ovQuota?: OvQuotaGate | null;
+  /** Unused stickers this login can pick. Typing the plate number still works. */
+  availableSerials?: readonly string[];
   /** Existing draft id. A serial reserved by this draft is not a conflict. */
   pasOwnRecordId?: string | null;
   isVerifier?: boolean;
@@ -210,6 +212,7 @@ export const VerificationSessionFields = forwardRef<
   mobileFloatingChrome = false,
   lockKind = false,
   ovQuota = null,
+  availableSerials,
   pasOwnRecordId = null,
   isVerifier = false,
   verifierPincode = null,
@@ -1304,6 +1307,7 @@ export const VerificationSessionFields = forwardRef<
               scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
               allowInterweighingDirect={Boolean(ovQuota?.allowInterweighingDirect)}
               directRemaining={ovQuota?.directRemaining ?? []}
+              availableSerials={availableSerials}
               disabled={locked}
               geoStampCoords={imageGeoStampCoords}
               geoStampWeather={geoStampWeather}
@@ -1602,6 +1606,7 @@ export const VerificationSessionFields = forwardRef<
               onAddInstrument={handleAddInstrument}
               showDevices={showDevices}
               ovQuota={values.verificationType === 'OV' ? ovQuota : null}
+              availableSerials={availableSerials}
               lockedSerial={values.lockedSerial}
             />
           )}
