@@ -22,7 +22,10 @@ import {
   parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
-import { parseVerificationListStatusParam } from '../../lib/verificationListStatusQuery';
+import {
+  parseVerificationListStatusParam,
+  verificationListIgnoresDurationFilter,
+} from '../../lib/verificationListStatusQuery';
 import { rewriteOutOfKeralaJobsToRcName } from '../../lib/verificationRcFiling';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
@@ -352,9 +355,13 @@ export const AdminVerificationList: React.FC = () => {
     () => records.filter(record => matchesVerificationDurationFilter(record, durationFilter)),
     [records, durationFilter],
   );
+  const listScope = useMemo(
+    () => (verificationListIgnoresDurationFilter(statusFilter) ? records : durationScoped),
+    [statusFilter, records, durationScoped],
+  );
 
   const filteredRecords = useMemo(() => {
-    const filtered = durationScoped.filter(record => {
+    const filtered = listScope.filter(record => {
       if (voidOnly && !isVerificationCertificateVoided(record)) {
         return false;
       }
@@ -368,7 +375,7 @@ export const AdminVerificationList: React.FC = () => {
         !matchesVerificationListStatusFilter(
           record,
           statusFilter,
-          durationScoped,
+          listScope,
           duplicatePrimaryIds,
           serialGroups,
         )
@@ -386,8 +393,8 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
-    return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
-  }, [durationScoped, statusFilter, voidOnly, paymentDueFilter, typeFilter, rcFilter, signedPdfFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+    return buildVerificationListDisplay(filtered, listScope, statusFilter);
+  }, [listScope, statusFilter, voidOnly, paymentDueFilter, typeFilter, rcFilter, signedPdfFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -452,14 +459,24 @@ export const AdminVerificationList: React.FC = () => {
     [statusFilter, typeFilter, rcFilter, searchTerm, rcCenterNameByRcId],
   );
 
-  const counts = useMemo(
-    () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
-    [durationScoped, listFilters],
-  );
-  const dashCounts = useMemo(
-    () => tallyVerificationStatusFilters(durationScoped),
-    [durationScoped],
-  );
+  const counts = useMemo(() => {
+    const scoped = tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters);
+    const lifetime = tallyVerificationStatusFilters(records);
+    return {
+      ...scoped,
+      pending_rc: lifetime.pending_rc,
+      failed_submit: lifetime.failed_submit,
+    };
+  }, [durationScoped, listFilters, records]);
+  const dashCounts = useMemo(() => {
+    const scoped = tallyVerificationStatusFilters(durationScoped);
+    const lifetime = tallyVerificationStatusFilters(records);
+    return {
+      ...scoped,
+      pending_rc: lifetime.pending_rc,
+      failed_submit: lifetime.failed_submit,
+    };
+  }, [durationScoped, records]);
   const dashOvCount = useMemo(
     () => tallyVerificationTypeFilters(durationScoped).OV,
     [durationScoped],

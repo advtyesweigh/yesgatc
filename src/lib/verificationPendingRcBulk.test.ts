@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 import type { SiteCalibration } from '../types.ts';
 import {
   parseVerificationListStatusParam,
+  verificationListIgnoresDurationFilter,
   verificationListKeepsUncollapsedRows,
 } from './verificationListStatusQuery.ts';
+import { recordActivityStamp } from './dashboardPeriod.ts';
 import {
   canActorBulkSubmitPendingRc,
   filterPendingRcSubmitTargets,
@@ -36,6 +38,22 @@ describe('parseVerificationListStatusParam', () => {
     assert.equal(parseVerificationListStatusParam('draft'), 'draft');
     assert.equal(parseVerificationListStatusParam('failed_submit'), 'failed_submit');
     assert.equal(parseVerificationListStatusParam('certified'), 'certified');
+  });
+
+  it('action queues ignore period duration (Oct pending_rc visible in Nov)', () => {
+    assert.equal(verificationListIgnoresDurationFilter('pending_rc'), true);
+    assert.equal(verificationListIgnoresDurationFilter('failed_submit'), true);
+    assert.equal(verificationListIgnoresDurationFilter('certified'), false);
+    assert.equal(verificationListIgnoresDurationFilter('all'), false);
+
+    const octPending = rec({
+      id: 'x00180',
+      serialNumber: 'X00180',
+      createdAt: '2026-10-24T05:48:43.174Z',
+      pendingRcAt: '2026-10-24T05:49:01.998Z',
+    });
+    // Prefer pendingRcAt over createdAt for activity / period stamps.
+    assert.equal(recordActivityStamp(octPending), Date.parse('2026-10-24T05:49:01.998Z'));
   });
 
   it('maps legacy aliases and rejects unknown', () => {

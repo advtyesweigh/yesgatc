@@ -271,10 +271,11 @@ export const RCDashboard: React.FC = () => {
     () => tallySignedPdfFilters(verifications).notSigned,
     [verifications],
   );
-  const lifetimeCertified = useMemo(
-    () => tallyVerificationStatusFilters(verifications).certified,
+  const lifetimeStatusTally = useMemo(
+    () => tallyVerificationStatusFilters(verifications),
     [verifications],
   );
+  const lifetimeCertified = lifetimeStatusTally.certified;
   const listDuration = dashboardPeriodToListDuration(period);
 
   const verificationHref = (
@@ -351,10 +352,10 @@ export const RCDashboard: React.FC = () => {
       {
         key: 'failed_submit',
         label: 'Failed at Submission',
-        count: tally.failed_submit,
+        count: lifetimeStatusTally.failed_submit,
         tone: 'red',
         icon: <UploadCloud size={18} strokeWidth={1.9} />,
-        href: verificationHref('failed_submit'),
+        href: verificationHref('failed_submit', 'all'),
       },
       {
         key: 'not_signed',
@@ -367,10 +368,10 @@ export const RCDashboard: React.FC = () => {
       {
         key: 'pending_rc',
         label: 'Pending RC',
-        count: tally.pending_rc,
+        count: lifetimeStatusTally.pending_rc,
         tone: 'orange',
         icon: <UserCheck size={18} strokeWidth={1.9} />,
-        href: verificationHref('pending_rc'),
+        href: verificationHref('pending_rc', 'all'),
       },
       {
         key: 'certified',
@@ -431,6 +432,7 @@ export const RCDashboard: React.FC = () => {
     tally,
     unsignedCertCount,
     lifetimeCertified,
+    lifetimeStatusTally,
     vctCount,
     rcRank,
     rcCompanyName,

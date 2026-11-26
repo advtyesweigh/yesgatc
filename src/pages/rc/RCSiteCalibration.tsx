@@ -143,7 +143,10 @@ import {
   parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
-import { parseVerificationListStatusParam } from '../../lib/verificationListStatusQuery';
+import {
+  parseVerificationListStatusParam,
+  verificationListIgnoresDurationFilter,
+} from '../../lib/verificationListStatusQuery';
 import {
   canActorBulkSubmitPendingRc,
   filterPendingRcSubmitTargets,
@@ -3058,16 +3061,21 @@ export const RCSiteCalibration: React.FC = () => {
     () => records.filter(record => matchesVerificationDurationFilter(record, durationFilter)),
     [records, durationFilter],
   );
+  /** Pending RC / failed_submit = full backlog; period chip must not hide them. */
+  const listScope = useMemo(
+    () => (verificationListIgnoresDurationFilter(statusFilter) ? records : durationScoped),
+    [statusFilter, records, durationScoped],
+  );
 
   const paymentDueCount = useMemo(
-    () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
-    [durationScoped],
+    () => listScope.filter(record => isRvWalletPaymentOutstanding(record)).length,
+    [listScope],
   );
-  const signedPdfCounts = useMemo(() => tallySignedPdfFilters(durationScoped), [durationScoped]);
+  const signedPdfCounts = useMemo(() => tallySignedPdfFilters(listScope), [listScope]);
   const pendingUnsignedTotal = useMemo(() => tallySignedPdfFilters(records).notSigned, [records]);
 
   const filteredRecords = useMemo(() => {
-    const filtered = durationScoped.filter(record => {
+    const filtered = listScope.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
       if (paymentDueFilter === 'due' && !isRvWalletPaymentOutstanding(record)) {
         return false;
@@ -3079,7 +3087,7 @@ export const RCSiteCalibration: React.FC = () => {
         !matchesVerificationListStatusFilter(
           record,
           statusFilter,
-          durationScoped,
+          listScope,
           duplicatePrimaryIds,
           serialGroups,
         )
@@ -3088,8 +3096,8 @@ export const RCSiteCalibration: React.FC = () => {
       }
       return matchesVerificationTypeFilter(record, typeFilter);
     });
-    return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
-  }, [durationScoped, statusFilter, typeFilter, paymentDueFilter, signedPdfFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+    return buildVerificationListDisplay(filtered, listScope, statusFilter);
+  }, [listScope, statusFilter, typeFilter, paymentDueFilter, signedPdfFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -3114,14 +3122,24 @@ export const RCSiteCalibration: React.FC = () => {
     () => ({ statusFilter, typeFilter, searchTerm }),
     [statusFilter, typeFilter, searchTerm],
   );
-  const statusCounts = useMemo(
-    () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
-    [durationScoped, listFilters],
-  );
-  const dashCounts = useMemo(
-    () => tallyVerificationStatusFilters(durationScoped),
-    [durationScoped],
-  );
+  const statusCounts = useMemo(() => {
+    const scoped = tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters);
+    const lifetime = tallyVerificationStatusFilters(records);
+    return {
+      ...scoped,
+      pending_rc: lifetime.pending_rc,
+      failed_submit: lifetime.failed_submit,
+    };
+  }, [durationScoped, listFilters, records]);
+  const dashCounts = useMemo(() => {
+    const scoped = tallyVerificationStatusFilters(durationScoped);
+    const lifetime = tallyVerificationStatusFilters(records);
+    return {
+      ...scoped,
+      pending_rc: lifetime.pending_rc,
+      failed_submit: lifetime.failed_submit,
+    };
+  }, [durationScoped, records]);
   const dashRvCount = useMemo(
     () => tallyVerificationTypeFilters(durationScoped).RV,
     [durationScoped],

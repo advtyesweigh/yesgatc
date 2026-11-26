@@ -29,3 +29,13 @@ export function verificationListKeepsUncollapsedRows(
 ): boolean {
   return statusFilter === 'pending_rc' || statusFilter === 'duplicates';
 }
+
+/**
+ * Action queues (Pending RC / Failed submit) are backlogs — never hide by period chip.
+ * Dashboard deep-link used to pass duration=month and wipe October pending_rc in November.
+ */
+export function verificationListIgnoresDurationFilter(
+  statusFilter: VerificationStatusFilter,
+): boolean {
+  return statusFilter === 'pending_rc' || statusFilter === 'failed_submit';
+}

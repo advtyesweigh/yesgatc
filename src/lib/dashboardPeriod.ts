@@ -68,6 +68,7 @@ export type DashboardActivityRecord = {
   approvedAt?: string;
   submittedAt?: string;
   rejectedAt?: string;
+  pendingRcAt?: string;
 };
 
 /** Prefer the latest workflow stamp so period tallies follow certification, not create date. */
@@ -76,6 +77,7 @@ export function recordActivityStamp(record: DashboardActivityRecord): number {
     record.certifiedAt ||
     record.rejectedAt ||
     record.submittedAt ||
+    record.pendingRcAt ||
     record.createdAt ||
     record.approvedAt ||
     '';
