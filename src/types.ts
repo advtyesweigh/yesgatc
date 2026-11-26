@@ -294,6 +294,11 @@ export interface FirestoreUserDoc {
   ovQuotaPeriod?: string;
   ovQuotaUpdatedAt?: string;
   ovQuotaSource?: string;
+  /**
+   * Off-books allotted bump (e.g. inter-RC transfer) preserved on YesOne `rc.ov_quota`
+   * pushes: live Allotted = YesOne qty + ovQuotaManualAdjust.
+   */
+  ovQuotaManualAdjust?: number;
   /** Yesone inbound — serials allotted to this RC. */
   yesoneAllottedSerials?: string[];
   /** Super Admin voided serials — excluded from remaining qty. */

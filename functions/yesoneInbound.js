@@ -2160,6 +2160,12 @@ async function applySerialUpdated(db, item) {
   };
 }
 
+/** Off-books bump (e.g. ATL→ACE transfer) kept across YesOne absolute ov_quota pushes. */
+function readOvQuotaManualAdjust(rc) {
+  const n = optionalFiniteNumber(rc?.ovQuotaManualAdjust);
+  return n == null ? 0 : n;
+}
+
 async function applyOvQuota(db, item) {
   const quota = readQuotaValue(item);
   if (quota == null) return { ok: false, event: 'rc.ov_quota', error: 'quota_required' };
@@ -2171,7 +2177,8 @@ async function applyOvQuota(db, item) {
   if (quota === masterUnusedPoolQty()) {
     return { ok: true, event: 'rc.ov_quota', id: rc.id, skipped: 'master_unused_pool' };
   }
-  const allotted = quota;
+  const manualAdjust = readOvQuotaManualAdjust(rc);
+  const allotted = quota + manualAdjust;
   const used = readQuotaUsed(item);
   const period = optionalTrimmed(item.ovQuotaPeriod || item.period || item.month || item.fy)
     || optionalTrimmed(asRecord(item.quota).period);
@@ -2193,6 +2200,7 @@ async function applyOvQuota(db, item) {
     ovQuota: allotted,
     ovQuotaUsed: used,
     ovQuotaPeriod: period,
+    ovQuotaManualAdjust: manualAdjust,
   };
 }
 
@@ -2368,6 +2376,7 @@ module.exports = {
   readPreviousSerial,
   readQuotaValue,
   readQuotaUsed,
+  readOvQuotaManualAdjust,
   serialDocId,
   expandSerialRange,
   yesoneInboundHttpHandler,

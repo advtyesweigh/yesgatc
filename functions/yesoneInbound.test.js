@@ -463,6 +463,78 @@ test('inbound GET and POST serial + quota', async () => {
   assert.ok(db._store['appSettings/global'].yesoneLastInboundLog.ok);
 });
 
+test('applyOvQuota preserves ovQuotaManualAdjust (YesOne qty + adjust)', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/ace': {
+      role: 'rc_admin',
+      rcCode: 'ACE',
+      companyName: 'ACE ELECTRONICS',
+      ovQuota: 290,
+      ovQuotaUsed: 298,
+      ovQuotaManualAdjust: 100,
+    },
+  });
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'rc.ov_quota', rcCode: 'ACE', ovQuota: 290, used: 298 },
+    },
+    res,
+    db,
+  );
+
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['users/ace'].ovQuota, 390);
+  assert.equal(db._store['users/ace'].ovQuotaUsed, 298);
+  assert.equal(db._store['users/ace'].ovQuotaManualAdjust, 100);
+  assert.equal(db._store['users/ace'].ovQuotaSource, 'yesone');
+
+  const again = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'rc.ov_quota', rcCode: 'ACE', ovQuota: 310 },
+    },
+    again,
+    db,
+  );
+  assert.equal(again.body.ok, true);
+  assert.equal(db._store['users/ace'].ovQuota, 410);
+  assert.equal(db._store['users/ace'].ovQuotaUsed, 298);
+  assert.equal(db._store['users/ace'].ovQuotaManualAdjust, 100);
+});
+
+test('applyOvQuota without adjust still absolute-sets YesOne qty', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/rc1': { role: 'rc_admin', rcCode: 'ABC', companyName: 'Meezan', ovQuota: 50, ovQuotaUsed: 3 },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'rc.ov_quota', rcCode: 'ABC', ovQuota: 40, used: 3 },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['users/rc1'].ovQuota, 40);
+  assert.equal(db._store['users/rc1'].ovQuotaUsed, 3);
+});
+
 test('Allotted from Yesone sold; unused Y/YZ not injected', async () => {
   const db = createMemoryDb({
     'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
