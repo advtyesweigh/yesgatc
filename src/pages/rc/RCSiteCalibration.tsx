@@ -171,8 +171,15 @@ import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { actorJobBalanceQty, excludeReservedSerials, isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { uniqueSerials } from '../../lib/yesoneInboundData';
-import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import {
+  OV_BALANCE_ZERO_MORE,
+  isOvBalanceExhausted,
+  ovBalanceExhaustedMessage,
+  ovQuotaQtyCap,
+  type OvQuotaGate,
+} from '../../lib/ovQuotaGate';
 import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
+import { verificationStageQuotaTotals } from '../../lib/vrAllotted';
 import {
   allotmentUsesPasProduct,
   catalogueHasPasProducts,
@@ -473,15 +480,16 @@ export const RCSiteCalibration: React.FC = () => {
   });
   const [assignableVcts, setAssignableVcts] = useState<AssignableVctOption[]>([]);
   const quotaSeats = useRcQuotaSeats(rcUid, records);
+  const masterRc = isMasterRc({
+    rcCode: rcProfile?.rcCode,
+    companyName: rcProfile?.companyName,
+  });
   const pickSerials = pickQuotaSerialsForActor(quotaSeats, {
     isRcAdmin,
     isVerifier,
     isVct,
     actorUid,
-    isMasterRc: isMasterRc({
-      rcCode: rcProfile?.rcCode,
-      companyName: rcProfile?.companyName,
-    }),
+    isMasterRc: masterRc,
   });
   const directSeats = useMemo(
     () =>
@@ -491,10 +499,33 @@ export const RCSiteCalibration: React.FC = () => {
       }),
     [actorProfile?.interweighingDirectSerials, records],
   );
+  // Verifier gate Balance = same VERIFICATION STAGES tile (Vr Allotted unused for uid),
+  // not Master-RC warehouse remaining / pickSerials length.
+  const verifierDashboardBalance = useMemo(() => {
+    if (!isVerifier || !quotaSeats.ready) return pickSerials.length;
+    return verificationStageQuotaTotals({
+      allottedByUid: quotaSeats.allottedByUid,
+      usedSerials: quotaSeats.usedSerials,
+      voidedSerials: quotaSeats.voidedSerials,
+      reservedSerials: quotaSeats.reservedSerials,
+      reservedForUids: quotaSeats.reservedForUids,
+      actor: { isVerifier: true, actorUid },
+    }).unused;
+  }, [
+    actorUid,
+    isVerifier,
+    pickSerials.length,
+    quotaSeats.allottedByUid,
+    quotaSeats.ready,
+    quotaSeats.reservedForUids,
+    quotaSeats.reservedSerials,
+    quotaSeats.usedSerials,
+    quotaSeats.voidedSerials,
+  ]);
   const actorBalanceQty = actorJobBalanceQty({
     isVerifier,
     balanceQty: quotaSeats.balanceQty,
-    verifierSeatCount: pickSerials.length,
+    verifierSeatCount: verifierDashboardBalance,
   });
   const availableSerials = useMemo(() => {
     if (!quotaSeats.ready) return undefined;
@@ -521,6 +552,7 @@ export const RCSiteCalibration: React.FC = () => {
       remaining: pickSerials,
       scopedToVerifier: isVerifier,
       allowInterweighingDirect: isVerifier,
+      skipBalanceGate: masterRc,
       directRemaining: isVerifier ? directSeats.unused : [],
       remainingAllotments: quotaSeats.allotmentRows
         .filter(row => row.status.trim().toLowerCase() !== 'used')
@@ -541,6 +573,7 @@ export const RCSiteCalibration: React.FC = () => {
     actorBalanceQty,
     editingId,
     isVerifier,
+    masterRc,
     records,
     quotaSeats.allotmentRows,
     products,
@@ -612,6 +645,7 @@ export const RCSiteCalibration: React.FC = () => {
                 remaining: pickSerials,
                 scopedToVerifier: isVerifier,
                 allowInterweighingDirect: isVerifier,
+                skipBalanceGate: masterRc,
                 directRemaining: isVerifier ? directSeats.unused : [],
                 remainingAllotments: ovQuotaGate.remainingAllotments,
                 balanceQty: actorBalanceQty,
@@ -621,7 +655,7 @@ export const RCSiteCalibration: React.FC = () => {
         isNewJob: false,
       };
     },
-    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty, isVerifier, directSeats.unused, ovQuotaGate.remainingAllotments],
+    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty, isVerifier, masterRc, directSeats.unused, ovQuotaGate.remainingAllotments],
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
@@ -1112,7 +1146,9 @@ export const RCSiteCalibration: React.FC = () => {
       if (included >= cap && !catalogueHasPasProducts(products)) {
         setError(
           cap <= 0
-            ? 'OV quota balance is 0. Cannot start more Original Verifications.'
+            ? (actorBalanceQty != null && actorBalanceQty < 0
+              ? `You don't have quota remaining. Balance is ${actorBalanceQty}. Cannot start more Original Verifications.`
+              : OV_BALANCE_ZERO_MORE)
             : `OV quota: ${cap} left. You can start ${cap} more Original Verification(s).`,
         );
         return;
@@ -1547,6 +1583,17 @@ export const RCSiteCalibration: React.FC = () => {
           ? 'Your account is not linked to an RC centre. Ask your RC admin to link you, then sign in again.'
           : 'RC scope is missing.',
       );
+      return;
+    }
+    // Create-path OV Balance gate — RV unlimited; master RC (IWP) exempt.
+    if (
+      showAddForm
+      && sessionValues.verificationType === 'OV'
+      && !masterRc
+      && quotaSeats.ready
+      && isOvBalanceExhausted(actorBalanceQty)
+    ) {
+      setError(ovBalanceExhaustedMessage(actorBalanceQty));
       return;
     }
     const gateMsg = verificationCreateGateBlockMessage(
@@ -2635,6 +2682,7 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
+    // Open picker even at Balance ≤ 0 — RV still allowed; OV disabled inside picker.
     if (isVerifier) {
       const ovNameMsg = validateVerifierOvStart(actorProfile?.ovInName);
       if (ovNameMsg) {
@@ -2660,6 +2708,16 @@ export const RCSiteCalibration: React.FC = () => {
       }
       if (kind === 'ov_self' && !rcProfile) {
         setListError('RC centre details are still loading.');
+        return;
+      }
+      const kindIsOv = kind === 'ov_self' || kind === 'ov_customer';
+      if (
+        kindIsOv
+        && !masterRc
+        && quotaSeats.ready
+        && isOvBalanceExhausted(actorBalanceQty)
+      ) {
+        setListError(ovBalanceExhaustedMessage(actorBalanceQty));
         return;
       }
       if (isVerifier) {
@@ -2713,6 +2771,9 @@ export const RCSiteCalibration: React.FC = () => {
       actorProfile,
       actorUid,
       user?.username,
+      actorBalanceQty,
+      masterRc,
+      quotaSeats.ready,
     ],
   );
 
@@ -2740,6 +2801,7 @@ export const RCSiteCalibration: React.FC = () => {
     } else if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
     } else {
+      // Open picker even at Balance ≤ 0 — RV still allowed; OV gated in picker.
       setUnsignedJobGate(true);
     }
 
@@ -2767,6 +2829,17 @@ export const RCSiteCalibration: React.FC = () => {
     const customer = customers.find(c => c.id === pendingCustomerId);
     if (!customer) return;
 
+    // Customer deep-link starts OV — block when Balance ≤ 0 (master exempt).
+    if (
+      !masterRc
+      && quotaSeats.ready
+      && isOvBalanceExhausted(actorBalanceQty)
+    ) {
+      setListError(ovBalanceExhaustedMessage(actorBalanceQty));
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
     const session = buildCustomerVerificationSession(customer, products, laboratorySealId);
     openNewVerificationSession(session);
     setSearchParams({}, { replace: true });
@@ -2779,6 +2852,9 @@ export const RCSiteCalibration: React.FC = () => {
     openNewVerificationSession,
     setSearchParams,
     user?.role,
+    actorBalanceQty,
+    masterRc,
+    quotaSeats.ready,
   ]);
 
   useEffect(() => {
@@ -3912,6 +3988,7 @@ export const RCSiteCalibration: React.FC = () => {
           ovBalanceQty={quotaSeats.ready ? actorBalanceQty : null}
           ovRemainingCount={quotaSeats.ready ? pickSerials.length : undefined}
           pendingSerials={pickSerials}
+          skipBalanceGate={masterRc}
           verifierMode={isVerifier}
           allowedJobKinds={actorProfile?.allowedJobKinds}
           hasPasProducts={catalogueHasPasProducts(products)}

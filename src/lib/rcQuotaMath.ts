@@ -155,10 +155,10 @@ function unusedAllottedToUid(seats: QuotaSerialActorSeats, uid: string): string[
 }
 
 /**
- * Job-start Balance shown on New Verification Job.
- * RC and VCT: Allotted − Used. Empty GAS sticker list must not zero it
- * (Meezan PAS bank is not in vctRemaining).
- * Verifier: unused seats reserved to that uid.
+ * Job-start Balance shown on New Verification Job / OV gate.
+ * RC and VCT: Allotted − Used (purchase qty). Empty GAS sticker list must not zero it.
+ * Verifier: same number as VERIFICATION STAGES Balance tile
+ * (`verificationStageQuotaTotals.unused` for that uid) — not warehouse remaining.
  */
 export function actorJobBalanceQty(input: {
   isVerifier?: boolean;

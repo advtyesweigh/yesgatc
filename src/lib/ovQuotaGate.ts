@@ -16,9 +16,29 @@ export type OvQuotaGate = {
   scopedToVerifier?: boolean;
   /** Unused Interweighing-direct serials. Isolated from Yesone remaining. */
   directRemaining?: string[];
-  /** Verifier may start OV without Yesone remaining (direct bank / typed direct). */
+  /** Verifier may type Interweighing-direct serials (does not bypass Balance). */
   allowInterweighingDirect?: boolean;
+  /**
+   * Master RC (IWP / Interweighing) — unlimited OV; Balance qty ignored.
+   * Set from `isMasterRc` on the parent RC profile.
+   */
+  skipBalanceGate?: boolean;
 };
+
+/** List / picker / toast when Balance ≤ 0 blocks New OV (RV never gated). */
+export const OV_BALANCE_EXHAUSTED_MESSAGE =
+  "You don't have quota remaining. Balance is 0. Cannot start Original Verification.";
+
+export const OV_BALANCE_ZERO_SETUP = OV_BALANCE_EXHAUSTED_MESSAGE;
+
+export const OV_BALANCE_ZERO_MORE =
+  "You don't have quota remaining. Balance is 0. Cannot start more Original Verifications.";
+
+/** @deprecated Use OV_BALANCE_EXHAUSTED_MESSAGE — RV is not Balance-gated. */
+export const OV_RV_BALANCE_ZERO_MESSAGE = OV_BALANCE_EXHAUSTED_MESSAGE;
+
+/** @deprecated RV has no Balance gate. */
+export const RV_BALANCE_ZERO_SETUP = OV_BALANCE_EXHAUSTED_MESSAGE;
 
 function serialKey(value: string): string {
   return value.trim().toUpperCase();
@@ -49,8 +69,9 @@ export function remainingSerialsForProduct(
   return remaining.filter(serial => !pasKeys.has(serialKey(serial)));
 }
 
-/** OV/RV quantity left (Allotted − Used). Source of truth for work left. */
+/** OV quantity left (Allotted − Used). Master RC skips Balance — treat as uncapped. */
 export function ovQuotaQtyCap(gate: OvQuotaGate): number {
+  if (gate.skipBalanceGate) return Number.POSITIVE_INFINITY;
   return gate.balanceQty == null ? gate.remaining.length : Math.max(0, gate.balanceQty);
 }
 
@@ -81,9 +102,27 @@ export function ovSerialChoicesForRow(
   return out.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+/** True when Balance is known and ≤ 0 (blocks New OV only — not RV, not master RC). */
+export function isOvBalanceExhausted(balanceQty: number | null | undefined): boolean {
+  return balanceQty != null && balanceQty <= 0;
+}
+
+/** @deprecated Prefer isOvBalanceExhausted — name kept for local call sites. */
+export function isOvRvBalanceExhausted(balanceQty: number | null | undefined): boolean {
+  return isOvBalanceExhausted(balanceQty);
+}
+
+/** Warning copy; mentions negative Balance when useful. */
+export function ovBalanceExhaustedMessage(balanceQty: number | null | undefined): string {
+  if (balanceQty != null && balanceQty < 0) {
+    return `You don't have quota remaining. Balance is ${balanceQty}. Cannot start Original Verification.`;
+  }
+  return OV_BALANCE_EXHAUSTED_MESSAGE;
+}
+
 /**
- * New OV/RV requires Balance &gt; 0. No allotted-sticker / bank membership check.
- * Direct Interweighing source may still start when Balance is 0.
+ * New OV requires Balance &gt; 0. RV never gated. Master RC (skipBalanceGate) never gated.
+ * No allotted-sticker / bank membership check. Interweighing-direct does not bypass Balance.
  */
 export function validateOvQuotaSetup(
   verificationType: string,
@@ -93,12 +132,10 @@ export function validateOvQuotaSetup(
 ): string | null {
   void _hasPasProducts;
   if (!gate || !isNew) return null;
-  if (verificationType !== 'OV' && verificationType !== 'RV') return null;
-  if (gate.allowInterweighingDirect) return null;
+  if (verificationType !== 'OV') return null;
+  if (gate.skipBalanceGate) return null;
   if (ovQuotaQtyCap(gate) <= 0) {
-    return verificationType === 'RV'
-      ? 'Balance is 0. Cannot start Re-verification.'
-      : 'Balance is 0. Cannot start Original Verification.';
+    return ovBalanceExhaustedMessage(gate.balanceQty);
   }
   return null;
 }
@@ -115,7 +152,7 @@ function isDirectQuotaRow(row: OvQuotaDeviceRow): boolean {
 
 /**
  * OV devices: require typed serial + Balance qty for GAS seats.
- * No “must be in allotted remaining” check. PAS does not consume Balance.
+ * Master RC skips. PAS / Interweighing-direct do not consume Balance.
  */
 export function validateOvQuotaDevices(
   verificationType: string,
@@ -123,6 +160,7 @@ export function validateOvQuotaDevices(
   gate: OvQuotaGate | null | undefined,
 ): string | null {
   if (!gate || verificationType !== 'OV') return null;
+  if (gate.skipBalanceGate) return null;
   const held = new Set(gate.heldSerials.map(serialKey).filter(Boolean));
   const seen = new Set<string>();
   let newGas = 0;
@@ -144,7 +182,9 @@ export function validateOvQuotaDevices(
   const qtyCap = ovQuotaQtyCap(gate);
   if (newGas > qtyCap) {
     return qtyCap <= 0
-      ? 'Balance is 0. Cannot start more Original Verifications.'
+      ? (gate.balanceQty != null && gate.balanceQty < 0
+        ? `You don't have quota remaining. Balance is ${gate.balanceQty}. Cannot start more Original Verifications.`
+        : OV_BALANCE_ZERO_MORE)
       : `Balance: ${qtyCap} left. You can start ${qtyCap} more Original Verification(s).`;
   }
   return null;

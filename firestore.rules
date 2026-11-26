@@ -469,6 +469,9 @@ service cloud.firestore {
         return true;
       }
 
+      // Live OV Balance (Allotted − Used) enforced on client create path.
+      // Master RC (IWP) exempt; RV ungated. Rules cannot cheaply recompute seats.
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()

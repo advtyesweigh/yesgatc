@@ -411,6 +411,16 @@ describe('verificationStageQuotaTotals', () => {
       { allotted: 150, used: 20, unused: 124 },
     );
   });
+
+  it('Balance 0 on verifier stages tile is the New OV gate number', () => {
+    const exhausted = verificationStageQuotaTotals({
+      allottedByUid: { gk: used },
+      usedSerials: used,
+      reservedSerials: [],
+      actor: { isVerifier: true, actorUid: 'gk' },
+    });
+    assert.deepEqual(exhausted, { allotted: 20, used: 20, unused: 0 });
+  });
 });
 
 describe('reservedSerialsAfterVerifierAllot', () => {

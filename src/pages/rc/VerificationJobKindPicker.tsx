@@ -10,6 +10,10 @@ import {
   Users,
 } from 'lucide-react';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
+import {
+  isOvBalanceExhausted,
+  ovBalanceExhaustedMessage,
+} from '../../lib/ovQuotaGate';
 import { verificationJobKindsForActor } from '../../lib/verificationJobKinds';
 import type { VerificationJobKind } from '../../lib/siteCalibrationProfileFields';
 
@@ -21,6 +25,8 @@ type VerificationJobKindPickerProps = {
   pendingSerials: string[];
   /** @deprecated PAS no longer bypasses Balance gate. */
   hasPasProducts?: boolean;
+  /** Master RC (IWP) — OV Balance gate skipped. */
+  skipBalanceGate?: boolean;
   /** Verifier session — kinds filtered by allowedJobKinds. */
   verifierMode?: boolean;
   /** Verifier RC grant; ignored for RC/VCT. */
@@ -68,6 +74,7 @@ export function VerificationJobKindPicker({
   ovRemainingCount: _ovRemainingCount,
   pendingSerials: _pendingSerials,
   hasPasProducts: _hasPasProducts = false,
+  skipBalanceGate = false,
   verifierMode = false,
   allowedJobKinds,
   onSelect,
@@ -77,17 +84,16 @@ export function VerificationJobKindPicker({
   void _pendingSerials;
   void _hasPasProducts;
   const skipHistoryBackRef = useRef(false);
-  // Balance qty only — no allotted-serial list gate. Blocks OV and RV when 0.
-  const balanceBlocked = ovBalanceQty != null && ovBalanceQty <= 0;
+  // Balance qty only — blocks OV when ≤ 0. RV never blocked. Master RC never blocked.
+  const ovBlocked = !skipBalanceGate && isOvBalanceExhausted(ovBalanceQty);
   const balanceLabel =
-    ovBalanceQty == null ? '—' : String(Math.max(0, ovBalanceQty));
+    ovBalanceQty == null ? '—' : String(ovBalanceQty);
 
   const visibleKinds = useMemo(() => {
     const allowed = new Set(verificationJobKindsForActor(verifierMode, allowedJobKinds));
     return KINDS.filter(kind => allowed.has(kind.id));
   }, [verifierMode, allowedJobKinds]);
 
-  const showsRv = visibleKinds.some(kind => kind.id === 'rv_customer');
   const showsOv = visibleKinds.some(kind => kind.ov);
 
   useHistoryOverlay(true, onClose, { suppressHistoryBackRef: skipHistoryBackRef });
@@ -134,7 +140,7 @@ export function VerificationJobKindPicker({
       <div className="verification-job-kind-page-body">
         <div className="verification-job-kind-page-list">
           {visibleKinds.map(kind => {
-            const disabled = balanceBlocked;
+            const disabled = kind.ov && ovBlocked;
             const Icon = kind.Icon;
             return (
               <button
@@ -179,10 +185,8 @@ export function VerificationJobKindPicker({
           ) : null}
         </div>
 
-        {balanceBlocked && (showsOv || showsRv) ? (
-          <p className="verification-job-kind-hint">
-            Balance is 0. Cannot start OV or RV until quota is available.
-          </p>
+        {ovBlocked && showsOv ? (
+          <p className="verification-job-kind-hint">{ovBalanceExhaustedMessage(ovBalanceQty)}</p>
         ) : null}
       </div>
     </div>,

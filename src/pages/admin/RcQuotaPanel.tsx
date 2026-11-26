@@ -269,41 +269,44 @@ export function RcQuotaPanel() {
   const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
 
   const rows = useMemo(() => {
-    return quotas.map(row => {
-      const code = row.rcCode.toUpperCase();
-      const allotSerials = uniqueSerials([
-        ...(serialsByRc.get(row.uid) || []),
-        ...(code ? serialsByRc.get(code) || [] : []),
-      ]);
-      const allotmentUsedSerials = uniqueSerials([
-        ...(allotUsedByRc.get(row.uid) || []),
-        ...(code ? allotUsedByRc.get(code) || [] : []),
-      ]);
-      const rcRecords = recordsByRc.get(row.uid);
-      const seats = computeRcQuotaSeats({
-        rcCode: row.rcCode,
-        companyName: row.companyName,
-        ovQuota: row.ovQuota,
-        ovQuotaUsed: row.ovQuotaUsed,
-        // Live OVs loaded for all rows — same Used path as RC home.
-        recordsAreRcWide: rcRecords != null,
-        storedSerials: row.storedSerials,
-        allotSerials,
-        voidedSerials: row.voidedSerials,
-        records: rcRecords || [],
-        pasProductIds,
-        pasSerials,
-        allotmentUsedSerials,
+    // Master RC (IWP / Interweighing) stays unlimited OV — hide from this list only.
+    return quotas
+      .filter(row => !isMasterRc(row))
+      .map(row => {
+        const code = row.rcCode.toUpperCase();
+        const allotSerials = uniqueSerials([
+          ...(serialsByRc.get(row.uid) || []),
+          ...(code ? serialsByRc.get(code) || [] : []),
+        ]);
+        const allotmentUsedSerials = uniqueSerials([
+          ...(allotUsedByRc.get(row.uid) || []),
+          ...(code ? allotUsedByRc.get(code) || [] : []),
+        ]);
+        const rcRecords = recordsByRc.get(row.uid);
+        const seats = computeRcQuotaSeats({
+          rcCode: row.rcCode,
+          companyName: row.companyName,
+          ovQuota: row.ovQuota,
+          ovQuotaUsed: row.ovQuotaUsed,
+          // Live OVs loaded for all rows — same Used path as RC home.
+          recordsAreRcWide: rcRecords != null,
+          storedSerials: row.storedSerials,
+          allotSerials,
+          voidedSerials: row.voidedSerials,
+          records: rcRecords || [],
+          pasProductIds,
+          pasSerials,
+          allotmentUsedSerials,
+        });
+        return {
+          ...row,
+          allottedQty: seats.allottedQty,
+          usedQty: seats.usedQty,
+          balanceQty: seats.balanceQty,
+          serials: seats.remaining,
+          pasSerials: seats.pasRemaining,
+        };
       });
-      return {
-        ...row,
-        allottedQty: seats.allottedQty,
-        usedQty: seats.usedQty,
-        balanceQty: seats.balanceQty,
-        serials: seats.remaining,
-        pasSerials: seats.pasRemaining,
-      };
-    });
   }, [allotUsedByRc, pasProductIds, pasSerials, quotas, recordsByRc, serialsByRc]);
 
   const openRow = useMemo(

@@ -12,7 +12,12 @@ import {
 } from './rcQuotaMath.ts';
 import { assignUnownedReservedToSoleUid } from './vrAllotted.ts';
 import { mergePasBlockedSerials, pasSerialsFromMetaRanges } from './pasSerialBankMatch.ts';
-import { validateOvQuotaDevices, validateOvQuotaSetup } from './ovQuotaGate.ts';
+import {
+  ovQuotaQtyCap,
+  validateOvQuotaDevices,
+  validateOvQuotaSetup,
+} from './ovQuotaGate.ts';
+import { computeRcQuotaSeats } from './rcQuotaSeats.ts';
 
 describe('resolveRcQuotaUsedQty', () => {
   it('uses live OV count when records are RC-wide', () => {
@@ -379,17 +384,35 @@ describe('actorJobBalanceQty', () => {
   });
 });
 
-describe('OV/RV Balance gate (quota only)', () => {
+describe('OV Balance gate (quota only; RV ungated)', () => {
   const emptyGate = { remaining: [] as string[], balanceQty: 0, heldSerials: [] as string[] };
 
-  it('blocks OV and RV when Balance is 0 (PAS no longer bypasses)', () => {
+  it('blocks OV when Balance is 0; RV never gated', () => {
     assert.equal(
       validateOvQuotaSetup('OV', emptyGate, true, true),
-      'Balance is 0. Cannot start Original Verification.',
+      "You don't have quota remaining. Balance is 0. Cannot start Original Verification.",
+    );
+    assert.equal(validateOvQuotaSetup('RV', emptyGate, true, false), null);
+  });
+
+  it('blocks OV when Balance is negative and mentions the debt', () => {
+    assert.equal(
+      validateOvQuotaSetup(
+        'OV',
+        { remaining: [], balanceQty: -8, heldSerials: [] },
+        true,
+        false,
+      ),
+      "You don't have quota remaining. Balance is -8. Cannot start Original Verification.",
     );
     assert.equal(
-      validateOvQuotaSetup('RV', emptyGate, true, false),
-      'Balance is 0. Cannot start Re-verification.',
+      validateOvQuotaSetup(
+        'RV',
+        { remaining: [], balanceQty: -8, heldSerials: [] },
+        true,
+        false,
+      ),
+      null,
     );
   });
 
@@ -405,7 +428,27 @@ describe('OV/RV Balance gate (quota only)', () => {
     );
   });
 
-  it('verifier direct bank skips Balance gate', () => {
+  it('master RC (IWP) skips Balance gate for OV', () => {
+    assert.equal(
+      validateOvQuotaSetup(
+        'OV',
+        { remaining: [], balanceQty: -8, heldSerials: [], skipBalanceGate: true },
+        true,
+        false,
+      ),
+      null,
+    );
+    assert.equal(
+      validateOvQuotaDevices(
+        'OV',
+        [{ serial: 'G0001', pas: false }],
+        { remaining: [], balanceQty: 0, heldSerials: [], skipBalanceGate: true },
+      ),
+      null,
+    );
+  });
+
+  it('Balance 0 blocks verifier even with Interweighing-direct flag', () => {
     assert.equal(
       validateOvQuotaSetup(
         'OV',
@@ -419,8 +462,9 @@ describe('OV/RV Balance gate (quota only)', () => {
         true,
         false,
       ),
-      null,
+      "You don't have quota remaining. Balance is 0. Cannot start Original Verification.",
     );
+    // Direct-only device rows still do not consume Balance seats.
     assert.equal(
       validateOvQuotaDevices(
         'OV',
@@ -428,6 +472,78 @@ describe('OV/RV Balance gate (quota only)', () => {
         { remaining: [], balanceQty: 0, heldSerials: [], scopedToVerifier: true, allowInterweighingDirect: true },
       ),
       null,
+    );
+  });
+
+  it('ACE debt: Balance −8 + purchase 10 → Balance 2 allows 2 OVs', () => {
+    const debt = computeRcQuotaSeats({
+      rcCode: 'ACE',
+      companyName: 'ACE ELECTRONICS',
+      ovQuota: '290',
+      ovQuotaUsed: 290,
+      recordsAreRcWide: true,
+      storedSerials: [],
+      allotSerials: [],
+      voidedSerials: [],
+      records: Array.from({ length: 298 }, (_, i) => ({
+        id: `ov-${i}`,
+        verificationType: 'OV',
+        status: 'certified',
+        serialNumber: `X${String(i).padStart(5, '0')}`,
+        createdAt: '2026-11-01T00:00:00.000Z',
+      })) as import('../types.ts').SiteCalibration[],
+    });
+    assert.equal(debt.allottedQty, 290);
+    assert.equal(debt.usedQty, 298);
+    assert.equal(debt.balanceQty, -8);
+
+    const topped = computeRcQuotaSeats({
+      ...debt,
+      rcCode: 'ACE',
+      companyName: 'ACE ELECTRONICS',
+      ovQuota: '300',
+      ovQuotaUsed: 290,
+      recordsAreRcWide: true,
+      storedSerials: [],
+      allotSerials: [],
+      voidedSerials: [],
+      records: Array.from({ length: 298 }, (_, i) => ({
+        id: `ov-${i}`,
+        verificationType: 'OV',
+        status: 'certified',
+        serialNumber: `X${String(i).padStart(5, '0')}`,
+        createdAt: '2026-11-01T00:00:00.000Z',
+      })) as import('../types.ts').SiteCalibration[],
+    });
+    assert.equal(topped.allottedQty, 300);
+    assert.equal(topped.usedQty, 298);
+    assert.equal(topped.balanceQty, 2);
+
+    const afterPurchase = { remaining: [], balanceQty: topped.balanceQty, heldSerials: [] as string[] };
+    assert.equal(ovQuotaQtyCap(afterPurchase), 2);
+    assert.equal(validateOvQuotaSetup('OV', afterPurchase, true), null);
+    assert.equal(
+      validateOvQuotaDevices(
+        'OV',
+        [
+          { serial: 'A1', pas: false },
+          { serial: 'A2', pas: false },
+        ],
+        afterPurchase,
+      ),
+      null,
+    );
+    assert.equal(
+      validateOvQuotaDevices(
+        'OV',
+        [
+          { serial: 'A1', pas: false },
+          { serial: 'A2', pas: false },
+          { serial: 'A3', pas: false },
+        ],
+        afterPurchase,
+      ),
+      'Balance: 2 left. You can start 2 more Original Verification(s).',
     );
   });
 
@@ -442,7 +558,7 @@ describe('OV/RV Balance gate (quota only)', () => {
         [{ serial: 'G0001', pas: false }],
         { remaining: [], balanceQty: 0, heldSerials: [] },
       ),
-      'Balance is 0. Cannot start more Original Verifications.',
+      "You don't have quota remaining. Balance is 0. Cannot start more Original Verifications.",
     );
     assert.equal(
       validateOvQuotaDevices(
