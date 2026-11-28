@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, X } from 'lucide-react';
 import { useRcSignerProfile } from '../lib/useRcSignerProfile';
 import { useRcScope } from '../lib/roleScope';
 import {
   UNSIGNED_PDF_DISTURB_THRESHOLD,
+  clearUnsignedPdfDisturbShownThisLaunch,
+  hasUnsignedPdfDisturbShownThisLaunch,
+  markUnsignedPdfDisturbShownThisLaunch,
   useRcUnsignedPdfCount,
 } from '../lib/rcUnsignedPdfPending';
 import {
+  playUnsignedCertificateWarningNow,
+  playUnsignedCertificateWarningOnce,
   resetUnsignedCertificateWarningSession,
-  startUnsignedCertificateWarningLoop,
-  stopUnsignedCertificateWarningLoop,
 } from '../lib/playUnsignedCertificateWarningSound';
 
 function usePdfSignerFlag(): boolean {
@@ -49,9 +52,9 @@ function UnsignedPdfDisturbPopup({
   const qtyLabel = qtyLabelFor(count);
 
   useEffect(() => {
-    startUnsignedCertificateWarningLoop();
-    return () => stopUnsignedCertificateWarningLoop();
-  }, []);
+    if (downloadWarn) playUnsignedCertificateWarningNow();
+    else playUnsignedCertificateWarningOnce();
+  }, [downloadWarn]);
 
   const title = downloadWarn
     ? 'Not signed — download reminder'
@@ -83,9 +86,8 @@ function UnsignedPdfDisturbPopup({
       <>
         Your regional centre has <strong>{qtyLabel}</strong> with{' '}
         <strong>No signed PDF</strong>. Ask your RC admin to download, DSC-sign, and upload
-        these certificates for eMAAP. Until the backlog falls to{' '}
-        {UNSIGNED_PDF_DISTURB_THRESHOLD} or fewer, this reminder will appear on every menu
-        change and each new verification.
+        these certificates for eMAAP. Clear the backlog to{' '}
+        {UNSIGNED_PDF_DISTURB_THRESHOLD} or fewer to stop this reminder on the next app launch.
       </>
     )
   ) : pdfSigner ? (
@@ -98,8 +100,8 @@ function UnsignedPdfDisturbPopup({
     <>
       Your centre has <strong>{qtyLabel}</strong> marked <strong>No signed PDF</strong>.
       Download, sign with Class 3 DSC, and upload so eMAAP can issue them. With more than{' '}
-      {UNSIGNED_PDF_DISTURB_THRESHOLD} pending, this warning will disturb you and your VCTs
-      on every menu change and each new verification job until the backlog is cleared.
+      {UNSIGNED_PDF_DISTURB_THRESHOLD} pending, this warning appears once per app launch for you
+      and your VCTs until the backlog is cleared.
     </>
   );
 
@@ -173,18 +175,14 @@ export function UnsignedCertificateDownloadWarn({
   );
 }
 
-/** Layout host: popup on every menu change when unsigned PDF backlog &gt; 10 (RC + VCT). */
+/** Layout host: once-per-launch popup when unsigned PDF backlog &gt; 10 (RC + VCT). */
 export function RcUnsignedPdfDisturbHost() {
   const { rcUid, isRcAdmin, isVct } = useRcScope();
   const pdfSigner = usePdfSignerFlag();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const mock = searchParams.get('mockUnsignedDisturb') === '1';
   const eligible = isRcAdmin || isVct || mock;
-  const { count, ready, disturb } = useRcUnsignedPdfCount(
-    eligible ? rcUid : null,
-    location.pathname,
-  );
+  const { count, ready, disturb } = useRcUnsignedPdfCount(eligible ? rcUid : null);
   const [open, setOpen] = useState(false);
   const effectiveCount = mock && count <= UNSIGNED_PDF_DISTURB_THRESHOLD ? 15 : count;
   const effectiveDisturb = mock || disturb;
@@ -192,11 +190,20 @@ export function RcUnsignedPdfDisturbHost() {
   useEffect(() => {
     if (!eligible || !ready) return;
     if (!effectiveDisturb) return;
-    if (mock) resetUnsignedCertificateWarningSession();
+    if (mock) {
+      clearUnsignedPdfDisturbShownThisLaunch();
+      resetUnsignedCertificateWarningSession();
+      setOpen(true);
+      return;
+    }
+    if (hasUnsignedPdfDisturbShownThisLaunch()) return;
     setOpen(true);
-  }, [eligible, ready, effectiveDisturb, location.pathname, mock]);
+  }, [eligible, ready, effectiveDisturb, mock]);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    if (!mock) markUnsignedPdfDisturbShownThisLaunch();
+    setOpen(false);
+  }, [mock]);
 
   if (!open || !eligible) return null;
 
@@ -218,27 +225,24 @@ type NewJobGateProps = {
   onCancel: () => void;
 };
 
-/** Blocks new verification until RC/VCT acknowledges when backlog &gt; 10. */
+/** Blocks new verification once per launch until RC/VCT acknowledges when backlog &gt; 10. */
 export function RcUnsignedPdfNewJobGate({ open, onContinue, onCancel }: NewJobGateProps) {
   const { rcUid, isRcAdmin, isVct } = useRcScope();
   const pdfSigner = usePdfSignerFlag();
   const eligible = isRcAdmin || isVct;
+  const alreadyShown = hasUnsignedPdfDisturbShownThisLaunch();
   const { count, ready, disturb } = useRcUnsignedPdfCount(
-    eligible && open ? rcUid : null,
-    open ? 'job' : 0,
+    eligible && open && !alreadyShown ? rcUid : null,
   );
 
   useEffect(() => {
     if (!open) return;
-    if (!eligible) {
+    if (!eligible || alreadyShown || (ready && !disturb)) {
       onContinue();
-      return;
     }
-    if (!ready) return;
-    if (!disturb) onContinue();
-  }, [open, eligible, ready, disturb, onContinue]);
+  }, [open, eligible, alreadyShown, ready, disturb, onContinue]);
 
-  if (!open || !eligible || !ready || !disturb) return null;
+  if (!open || !eligible || alreadyShown || !ready || !disturb) return null;
 
   return (
     <UnsignedPdfDisturbPopup
@@ -246,7 +250,10 @@ export function RcUnsignedPdfNewJobGate({ open, onContinue, onCancel }: NewJobGa
       disturb
       audience={isVct && !isRcAdmin ? 'vct' : 'rc'}
       pdfSigner={pdfSigner}
-      onClose={onContinue}
+      onClose={() => {
+        markUnsignedPdfDisturbShownThisLaunch();
+        onContinue();
+      }}
       onCancel={onCancel}
     />
   );

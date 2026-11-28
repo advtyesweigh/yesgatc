@@ -37,7 +37,7 @@ export function RcUnsignedCertificateNotice({
 
   const [popupOpen, setPopupOpen] = useState(false);
 
-  // Soft banner popup once; layout host handles >10 disturb on every menu.
+  // Soft banner popup once; layout host handles >10 disturb once per launch.
   useEffect(() => {
     if (!show) return;
     if (typeof window === 'undefined') return;

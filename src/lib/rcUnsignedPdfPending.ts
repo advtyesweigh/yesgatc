@@ -4,8 +4,32 @@ import { db } from '../firebase';
 import { tallySignedPdfFilters } from './signedCertificatePdf';
 import type { SiteCalibration } from '../types';
 
-/** Above this, RC + VCT get disturbing popups on every menu / new job. */
+/** Above this, RC + VCT get a once-per-launch disturb popup. */
 export const UNSIGNED_PDF_DISTURB_THRESHOLD = 10;
+
+const DISTURB_SESSION_KEY = 'yesgatc-unsigned-pdf-disturb-shown';
+
+const countCache = new Map<string, number>();
+
+export function hasUnsignedPdfDisturbShownThisLaunch(): boolean {
+  if (typeof window === 'undefined') return false;
+  return sessionStorage.getItem(DISTURB_SESSION_KEY) === '1';
+}
+
+export function markUnsignedPdfDisturbShownThisLaunch(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(DISTURB_SESSION_KEY, '1');
+}
+
+export function clearUnsignedPdfDisturbShownThisLaunch(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(DISTURB_SESSION_KEY);
+}
+
+export function invalidateRcUnsignedPdfCount(rcUid?: string): void {
+  if (rcUid) countCache.delete(rcUid);
+  else countCache.clear();
+}
 
 export async function fetchRcUnsignedPdfCount(rcUid: string): Promise<number> {
   const snap = await getDocs(
@@ -14,16 +38,19 @@ export async function fetchRcUnsignedPdfCount(rcUid: string): Promise<number> {
   const records = snap.docs.map(
     item => ({ id: item.id, ...item.data() }) as SiteCalibration,
   );
-  return tallySignedPdfFilters(records).notSigned;
+  const count = tallySignedPdfFilters(records).notSigned;
+  countCache.set(rcUid, count);
+  return count;
 }
 
-/** Pending No signed PDF count for an RC centre. Refetch when `reloadKey` changes. */
+/** Pending No signed PDF count for an RC centre. Cached by rcUid; reloadKey refreshes in background. */
 export function useRcUnsignedPdfCount(
   rcUid: string | null | undefined,
   reloadKey?: string | number,
 ): { count: number; ready: boolean; disturb: boolean } {
-  const [count, setCount] = useState(0);
-  const [ready, setReady] = useState(false);
+  const cached = rcUid ? countCache.get(rcUid) : undefined;
+  const [count, setCount] = useState(cached ?? 0);
+  const [ready, setReady] = useState(cached !== undefined || !rcUid);
 
   useEffect(() => {
     if (!rcUid) {
@@ -32,7 +59,13 @@ export function useRcUnsignedPdfCount(
       return;
     }
     let cancelled = false;
-    setReady(false);
+    const hit = countCache.get(rcUid);
+    if (hit !== undefined) {
+      setCount(hit);
+      setReady(true);
+    } else {
+      setReady(false);
+    }
     void fetchRcUnsignedPdfCount(rcUid)
       .then(next => {
         if (cancelled) return;
